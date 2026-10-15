@@ -1,0 +1,148 @@
+// Prisma Schema Blueprint for PrintOnWeb Storefront Backend
+// Target DB: PostgreSQL
+// Purpose: Defines relational integrity, unique constraints, and indexes
+// required when a persistent PostgreSQL database is brought into scope.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum OrderStatus {
+  DRAFT
+  SUBMITTED
+  CONFIRMED
+  IN_PRODUCTION
+  COMPLETED
+  CANCELLED
+}
+
+enum FileStatus {
+  PENDING
+  UPLOADED
+  SCANNED
+  REJECTED
+}
+
+model Product {
+  id          String        @id @default(uuid())
+  slug        String        @unique
+  name        String
+  description String
+  category    String
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  options     PrintOption[]
+  quotes      Quote[]
+
+  @@index([category])
+  @@map("products")
+}
+
+model PrintOption {
+  id          String   @id @default(uuid())
+  productId   String
+  code        String
+  name        String
+  type        String   // size, stock, finish, sides, color
+  choices     Json     // List of allowed choice values with display labels
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, code])
+  @@index([productId])
+  @@map("print_options")
+}
+
+model Quote {
+  id                   String      @id @default(uuid())
+  productId            String
+  selectedOptions      Json        // Validated options map
+  quantity             Int
+  baseUnitPrice        Int         // Minor units (integer)
+  optionAdjustments    Json        // Line items breakdown
+  quantityBreakDiscount Int        // Minor units (integer)
+  setupFee             Int         // Minor units (integer)
+  total                Int         // Minor units (integer)
+  currency             String
+  pricingConfigVersion String
+  isSample             Boolean     @default(true)
+  taxIncluded          Boolean     @default(false)
+  shippingIncluded     Boolean     @default(false)
+  expiresAt            DateTime
+  createdAt            DateTime    @default(now())
+  product              Product     @relation(fields: [productId], references: [id])
+  orders               Order[]
+  files                File[]
+
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("quotes")
+}
+
+model Order {
+  id             String               @id @default(uuid())
+  quoteId        String
+  customerId     String
+  idempotencyKey String
+  status         OrderStatus          @default(DRAFT)
+  total          Int                  // Minor units (recomputed & confirmed)
+  currency       String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  quote          Quote                @relation(fields: [quoteId], references: [id])
+  statusHistory  OrderStatusHistory[]
+  files          File[]
+
+  @@unique([customerId, idempotencyKey])
+  @@index([customerId, createdAt])
+  @@map("orders")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  fromStatus OrderStatus?
+  toStatus  OrderStatus
+  reason    String?
+  createdAt DateTime    @default(now())
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+model File {
+  id           String     @id @default(uuid())
+  storageKey   String     @unique // Server-generated UUID, never exposed directly to clients
+  originalName String     // Sanitized display name only
+  mimeType     String
+  sizeBytes    Int
+  status       FileStatus @default(PENDING)
+  quoteId      String?
+  orderId      String?
+  createdAt    DateTime   @default(now())
+  quote        Quote?     @relation(fields: [quoteId], references: [id])
+  order        Order?     @relation(fields: [orderId], references: [id])
+
+  @@index([quoteId])
+  @@index([orderId])
+  @@map("files")
+}
+
+model WebhookEvent {
+  id         String   @id @default(uuid())
+  provider   String
+  eventId    String   @unique // Provider event ID for idempotent processing
+  eventType  String
+  payload    Json
+  processedAt DateTime @default(now())
+
+  @@map("webhook_events")
+}
