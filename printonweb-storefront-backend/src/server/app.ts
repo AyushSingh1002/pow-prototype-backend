@@ -32,7 +32,17 @@ export interface AppDependencies {
   rateLimiter?: InMemoryRateLimiter;
 }
 
+export function assertDemoRuntimeAllowed(nodeEnv: string): void {
+  if (nodeEnv === "production") {
+    throw new Error(
+      "Production startup is disabled: persistent repositories, verified authentication, object storage, and payment processing are not configured."
+    );
+  }
+}
+
 export function createApp(deps: AppDependencies = {}): Express {
+  assertDemoRuntimeAllowed(env.NODE_ENV);
+
   const app = express();
 
   // Basic security headers

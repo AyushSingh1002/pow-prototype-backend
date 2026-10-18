@@ -37,6 +37,37 @@ describe("Quotes API - POST /api/quotes Integration Tests", () => {
     expect(res.headers).toHaveProperty("x-request-id");
   });
 
+  it("prices book page-count and cover-finish selections on the server", async () => {
+    const options = {
+      size: "a5-portrait",
+      interior: "bw",
+      paper: "natural-white",
+      binding: "paperback",
+      pages: "120",
+      finish: "matte",
+    };
+    const baseline = await request(app)
+      .post("/api/quotes")
+      .send({ productId: "books", options, quantity: 10 });
+    const upgraded = await request(app)
+      .post("/api/quotes")
+      .send({
+        productId: "books",
+        options: { ...options, pages: "200", finish: "foil" },
+        quantity: 10,
+      });
+
+    expect(baseline.status).toBe(201);
+    expect(upgraded.status).toBe(201);
+    expect(upgraded.body.total).toBeGreaterThan(baseline.body.total);
+    expect(upgraded.body.lineItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ description: expect.stringContaining("pages = 200") }),
+        expect.objectContaining({ description: expect.stringContaining("finish = foil") }),
+      ])
+    );
+  });
+
   it("strictly rejects browser-supplied pricing or total fields", async () => {
     const tamperedPayload = {
       ...validQuotePayload,

@@ -158,6 +158,8 @@ export const samplePricingConfig: PricingConfig = {
         interior: ["bw", "full-colour"],
         paper: ["natural-white", "bright-white", "art-matte"],
         binding: ["paperback", "hardcover", "spiral", "saddle-stitch"],
+        pages: ["64", "120", "200", "320"],
+        finish: ["matte", "gloss", "spot_uv", "foil"],
       },
       incompatibleCombinations: [
         {
@@ -185,6 +187,18 @@ export const samplePricingConfig: PricingConfig = {
           hardcover: { unitPriceDelta: 15000, flatFee: 30000 },
           spiral: { unitPriceDelta: 3000 },
           "saddle-stitch": { unitPriceDelta: -2000 },
+        },
+        pages: {
+          "64": { unitPriceDelta: 768 },
+          "120": { unitPriceDelta: 1440 },
+          "200": { unitPriceDelta: 2400 },
+          "320": { unitPriceDelta: 3840 },
+        },
+        finish: {
+          matte: { unitPriceDelta: 0 },
+          gloss: { unitPriceDelta: 1200 },
+          spot_uv: { unitPriceDelta: 4500, flatFee: 4500 },
+          foil: { unitPriceDelta: 6500, flatFee: 6500 },
         },
       },
       quantityBreaks: [

@@ -3,6 +3,8 @@ import {
   OrderStatus,
   OrderStatusHistoryItem,
 } from "./order.types";
+import { ConflictError } from "../../core/errors/AppError";
+import { ErrorCodes } from "../../core/errors/errorCodes";
 
 export interface IOrderRepository {
   saveOrder(
@@ -32,6 +34,16 @@ export class InMemoryOrderRepository implements IOrderRepository {
     historyItem: OrderStatusHistoryItem
   ): Promise<OrderRecord> {
     const key = `${order.customerId}:${order.idempotencyKey}`;
+    const existingOrderId = this.idempotencyIndex.get(key);
+    if (existingOrderId) {
+      const existing = this.orders.get(existingOrderId);
+      if (existing?.quoteId === order.quoteId) return { ...existing };
+      throw new ConflictError(
+        "Idempotency key was previously used with different order parameters.",
+        ErrorCodes.DUPLICATE_IDEMPOTENCY_KEY
+      );
+    }
+
     this.orders.set(order.id, { ...order });
     this.idempotencyIndex.set(key, order.id);
 

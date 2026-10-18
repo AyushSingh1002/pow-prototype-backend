@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { UnauthorizedError, ForbiddenError } from "../../core/errors/AppError";
+import { env } from "../../config/env";
 
 declare global {
   namespace Express {
@@ -28,10 +29,11 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return next(new ForbiddenError("Customer account is blocked from placing orders."));
   }
 
-  // Simulated authenticated user context for demo / test suites
-  if (token === "demo-token" || token.startsWith("cust_")) {
+  // Fixed identities are only for the explicitly non-production demo runtime.
+  const demoCustomerIds = new Set(["cust_author_42", "cust_business_07"]);
+  if (env.NODE_ENV !== "production" && (token === "demo-token" || demoCustomerIds.has(token))) {
     req.user = {
-      id: token.startsWith("cust_") ? token : "cust_demo_1",
+      id: token === "demo-token" ? "cust_demo_1" : token,
       role: "customer",
     };
     return next();

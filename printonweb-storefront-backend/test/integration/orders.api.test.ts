@@ -79,6 +79,17 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
     expect(res.body.error).toHaveProperty("code", "FORBIDDEN");
   });
 
+  it("rejects caller-selected customer IDs that are not fixed demo profiles", async () => {
+    const res = await request(app)
+      .post("/api/orders")
+      .set("Authorization", "Bearer cust_victim_99")
+      .set("Idempotency-Key", "unknown-demo-customer")
+      .send({ quoteId: validQuoteId });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toHaveProperty("code", "UNAUTHORIZED");
+  });
+
   it("rejects missing Idempotency-Key header with 400", async () => {
     const res = await request(app)
       .post("/api/orders")
@@ -127,6 +138,22 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
 
     expect(replayRes.status).toBe(201);
     expect(replayRes.body.id).toBe(firstRes.body.id);
+  });
+
+  it("returns one order for concurrent requests with the same idempotency key", async () => {
+    const idempotencyKey = "order-key-concurrent";
+    const requests = Array.from({ length: 4 }, () =>
+      request(app)
+        .post("/api/orders")
+        .set("Authorization", "Bearer demo-token")
+        .set("Idempotency-Key", idempotencyKey)
+        .send({ quoteId: validQuoteId })
+    );
+
+    const responses = await Promise.all(requests);
+
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+    expect(new Set(responses.map((response) => response.body.id)).size).toBe(1);
   });
 
   it("rejects duplicate idempotency key used with conflicting quoteId with 409", async () => {
