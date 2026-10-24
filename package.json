@@ -5,11 +5,11 @@
   "description": "Unified Press & Proof / PrintOnWeb storefront prototype connecting Next.js frontend and Express backend",
   "scripts": {
     "dev:backend": "npm --prefix printonweb-storefront-backend run dev",
-    "dev:frontend": "npm --prefix pow-prototype-next-16.4.3 run dev",
-    "build": "npm --prefix printonweb-storefront-backend run build && npm --prefix pow-prototype-next-16.4.3 run build",
+    "dev:frontend": "npm --prefix pow-prototype run dev",
+    "build": "npm --prefix printonweb-storefront-backend run build && npm --prefix pow-prototype run build",
     "test:backend": "npm --prefix printonweb-storefront-backend test",
-    "test:frontend": "npm --prefix pow-prototype-next-16.4.3 test",
+    "test:frontend": "npm --prefix pow-prototype test",
     "test": "npm run test:backend && npm run test:frontend",
-    "lint": "npm --prefix printonweb-storefront-backend run lint && npm --prefix pow-prototype-next-16.4.3 run lint"
+    "lint": "npm --prefix printonweb-storefront-backend run lint && npm --prefix pow-prototype run lint"
   }
 }
