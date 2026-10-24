@@ -35,6 +35,30 @@ describe("Catalogue API - Integration Tests", () => {
       ).toBe(true);
     });
 
+    it("publishes small-run minimums for every catalogue format", async () => {
+      const res = await request(app).get("/api/products");
+
+      expect(res.status).toBe(200);
+      const minimums = Object.fromEntries(
+        res.body.data.map((product: { id: string; minQuantity: number }) => [
+          product.id,
+          product.minQuantity,
+        ])
+      );
+      expect(minimums).toMatchObject({
+        "business-cards": 10,
+        "flyers-brochures": 10,
+        "custom-stickers": 10,
+        books: 1,
+        documents: 1,
+        certificates: 10,
+        posters: 1,
+        letterheads: 10,
+        "photo-albums": 1,
+        calendars: 10,
+      });
+    });
+
     it("returns empty data array for non-matching category filter", async () => {
       const res = await request(app).get("/api/products?category=automotive");
 
@@ -73,6 +97,18 @@ describe("Catalogue API - Integration Tests", () => {
           (opt: { productId: string }) => opt.productId === "business-cards"
         )
       ).toBe(true);
+    });
+
+    it("provides book-specific page count and finish options", async () => {
+      const res = await request(app).get("/api/print-options?productId=books");
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "pages" }),
+          expect.objectContaining({ code: "finish" }),
+        ])
+      );
     });
 
     it("returns 404 PRODUCT_NOT_FOUND when productId is unknown", async () => {

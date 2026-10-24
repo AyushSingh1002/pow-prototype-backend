@@ -11,7 +11,7 @@ declare global {
 
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
   const incomingId = req.headers["x-request-id"];
-  const requestId = typeof incomingId === "string" && incomingId.length > 0
+  const requestId = typeof incomingId === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(incomingId)
     ? incomingId
     : `req_${uuidv4().replace(/-/g, "").slice(0, 16)}`;
 

@@ -16,3 +16,9 @@ export const createOrderBodySchema = z
       .uuid("quoteId must be a valid UUID"),
   })
   .strict({ message: "Unknown fields in order creation are rejected." });
+
+export const getOrderParamsSchema = z
+  .object({
+    id: z.string().uuid("Invalid order ID format. Must be a valid UUID."),
+  })
+  .strict();

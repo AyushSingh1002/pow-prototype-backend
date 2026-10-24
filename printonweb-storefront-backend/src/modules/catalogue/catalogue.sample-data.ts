@@ -8,7 +8,7 @@ export const sampleProducts: Product[] = [
     category: "stationery",
     description: "Standard 3.5x2 inch high-definition visiting cards on premium stock with optional lamination and spot UV.",
     isActive: true,
-    minQuantity: 50,
+    minQuantity: 10,
     maxQuantity: 10000,
     sampleStartingPrice: 300, // 300 paise
     currency: "INR",
@@ -21,7 +21,7 @@ export const sampleProducts: Product[] = [
     category: "marketing",
     description: "Full-color promotional flyers printed on crisp gloss or matte paper, available with bi-fold or tri-fold.",
     isActive: true,
-    minQuantity: 100,
+    minQuantity: 10,
     maxQuantity: 25000,
     sampleStartingPrice: 450, // 450 paise
     currency: "INR",
@@ -34,7 +34,7 @@ export const sampleProducts: Product[] = [
     category: "labels",
     description: "Weather-resistant custom cut vinyl stickers on white or transparent stock with vibrant pigment inks.",
     isActive: true,
-    minQuantity: 25,
+    minQuantity: 10,
     maxQuantity: 5000,
     sampleStartingPrice: 600, // 600 paise
     currency: "INR",
@@ -99,7 +99,7 @@ export const sampleProducts: Product[] = [
     category: "stationery",
     description: "Laser & inkjet friendly official stationery printed on executive watermark bond or ultra-smooth card.",
     isActive: true,
-    minQuantity: 50,
+    minQuantity: 10,
     maxQuantity: 5000,
     sampleStartingPrice: 400, // 400 paise = ₹4
     currency: "INR",
@@ -318,6 +318,32 @@ export const samplePrintOptions: PrintOption[] = [
       { value: "hardcover", label: "Hardcover (Casebound)" },
       { value: "spiral", label: "Spiral / Wiro Bound" },
       { value: "saddle-stitch", label: "Saddle Stitch" },
+    ],
+  },
+  {
+    id: "book-pages",
+    productId: "books",
+    code: "pages",
+    name: "Interior Page Count",
+    type: "pages",
+    choices: [
+      { value: "64", label: "64 pages" },
+      { value: "120", label: "120 pages" },
+      { value: "200", label: "200 pages" },
+      { value: "320", label: "320 pages" },
+    ],
+  },
+  {
+    id: "book-finish",
+    productId: "books",
+    code: "finish",
+    name: "Cover Finish",
+    type: "finish",
+    choices: [
+      { value: "matte", label: "Matte Lamination" },
+      { value: "gloss", label: "Gloss Lamination" },
+      { value: "spot_uv", label: "Spot UV" },
+      { value: "foil", label: "Foil Stamping" },
     ],
   },
 

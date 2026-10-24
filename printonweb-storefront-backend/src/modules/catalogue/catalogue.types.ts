@@ -9,7 +9,7 @@ export interface PrintOption {
   productId: string;
   code: string;
   name: string;
-  type: "size" | "stock" | "finish" | "sides" | "fold" | "material" | "cut" | "binding" | "interior";
+  type: "size" | "stock" | "finish" | "sides" | "fold" | "material" | "cut" | "binding" | "interior" | "pages";
   choices: ProductOptionChoice[];
 }
 

@@ -9,7 +9,7 @@ export const samplePricingConfig: PricingConfig = {
     "business-cards": {
       productId: "business-cards",
       baseUnitPrice: 300, // 300 paise = INR 3.00
-      minQuantity: 50,
+      minQuantity: 10,
       maxQuantity: 10000,
       setupFee: 15000, // 15000 paise = INR 150.00
       allowedOptions: {
@@ -57,7 +57,7 @@ export const samplePricingConfig: PricingConfig = {
     "flyers-brochures": {
       productId: "flyers-brochures",
       baseUnitPrice: 450, // 450 paise = INR 4.50
-      minQuantity: 100,
+      minQuantity: 10,
       maxQuantity: 25000,
       setupFee: 25000, // 25000 paise = INR 250.00
       allowedOptions: {
@@ -108,7 +108,7 @@ export const samplePricingConfig: PricingConfig = {
     "custom-stickers": {
       productId: "custom-stickers",
       baseUnitPrice: 600, // 600 paise = INR 6.00
-      minQuantity: 25,
+      minQuantity: 10,
       maxQuantity: 5000,
       setupFee: 10000, // 10000 paise = INR 100.00
       allowedOptions: {
@@ -324,7 +324,7 @@ export const samplePricingConfig: PricingConfig = {
     letterheads: {
       productId: "letterheads",
       baseUnitPrice: 400, // INR 4.00
-      minQuantity: 50,
+      minQuantity: 10,
       maxQuantity: 5000,
       setupFee: 10000,
       allowedOptions: {

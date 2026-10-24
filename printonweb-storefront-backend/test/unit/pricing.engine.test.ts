@@ -152,7 +152,7 @@ describe("Pricing Engine - Pure Function Unit Tests", () => {
   });
 
   it("rejects quantities outside allowed min/max range with UnprocessableEntityError", () => {
-    // business-cards min is 50, max is 10000
+    // Business cards allow small runs from 10 through the configured maximum.
     expect(() =>
       estimate(samplePricingConfig, {
         productId: "business-cards",
@@ -162,7 +162,20 @@ describe("Pricing Engine - Pure Function Unit Tests", () => {
           sides: "single",
           finish: "none",
         },
-        quantity: 20, // Below minQuantity (50)
+        quantity: 10,
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      estimate(samplePricingConfig, {
+        productId: "business-cards",
+        options: {
+          size: "standard",
+          stock: "300gsm-matte",
+          sides: "single",
+          finish: "none",
+        },
+        quantity: 9, // Below minQuantity (10)
       })
     ).toThrowError(UnprocessableEntityError);
 

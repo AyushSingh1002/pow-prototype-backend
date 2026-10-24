@@ -210,3 +210,112 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
     expect(res.body.error.message).toContain("does not match current computed price");
   });
 });
+
+describe("Orders API - GET /api/orders/:id Integration Tests", () => {
+  const quoteRepo = new InMemoryQuoteRepository();
+  const orderRepo = new InMemoryOrderRepository();
+  const app = createApp({
+    quoteRepository: quoteRepo,
+    orderRepository: orderRepo,
+  });
+
+  const validQuoteId = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+  const activeQuote: QuoteRecord = {
+    id: validQuoteId,
+    productId: "business-cards",
+    validatedOptions: {
+      size: "standard",
+      stock: "300gsm-matte",
+      sides: "single",
+      finish: "none",
+    },
+    quantity: 100,
+    lineItems: [
+      {
+        code: "BASE_PRICE",
+        description: "Base unit price (business-cards)",
+        unitAmount: 300,
+        quantity: 100,
+        lineTotal: 30000,
+      },
+      {
+        code: "QUANTITY_BREAK_DISCOUNT",
+        description: "Quantity break discount (5% off unit price for >= 100 units)",
+        unitAmount: -15,
+        quantity: 100,
+        lineTotal: -1500,
+      },
+      {
+        code: "SETUP_FEE",
+        description: "Pre-press plate, calibration and setup fee",
+        unitAmount: 15000,
+        quantity: 1,
+        lineTotal: 15000,
+      },
+    ],
+    total: 43500,
+    currency: "INR",
+    pricingConfigVersion: "sample-v1",
+    isSample: true,
+    taxIncluded: false,
+    shippingIncluded: false,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+
+  it("rejects malformed order IDs before reaching the service", async () => {
+    const res = await request(app)
+      .get("/api/orders/not-a-uuid")
+      .set("Authorization", "Bearer demo-token");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toHaveProperty("code", "VALIDATION_FAILED");
+    expect(res.body.error.details[0].path).toBe("id");
+  });
+
+  it("returns 404 for a valid but unknown order UUID", async () => {
+    const res = await request(app)
+      .get("/api/orders/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+      .set("Authorization", "Bearer demo-token");
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toHaveProperty("code", "ORDER_NOT_FOUND");
+  });
+
+  it("returns order and status history to the owning customer", async () => {
+    await quoteRepo.save(activeQuote);
+    const created = await request(app)
+      .post("/api/orders")
+      .set("Authorization", "Bearer demo-token")
+      .set("Idempotency-Key", "get-order-owner")
+      .send({ quoteId: validQuoteId });
+
+    expect(created.status).toBe(201);
+
+    const res = await request(app)
+      .get(`/api/orders/${created.body.id}`)
+      .set("Authorization", "Bearer demo-token");
+
+    expect(res.status).toBe(200);
+    expect(res.body.order).toHaveProperty("id", created.body.id);
+    expect(res.body.history).toHaveLength(1);
+  });
+
+  it("denies another customer access to the order", async () => {
+    await quoteRepo.save(activeQuote);
+    const created = await request(app)
+      .post("/api/orders")
+      .set("Authorization", "Bearer demo-token")
+      .set("Idempotency-Key", "get-order-other-customer")
+      .send({ quoteId: validQuoteId });
+
+    expect(created.status).toBe(201);
+
+    const res = await request(app)
+      .get(`/api/orders/${created.body.id}`)
+      .set("Authorization", "Bearer cust_business_07");
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toHaveProperty("code", "FORBIDDEN");
+  });
+});

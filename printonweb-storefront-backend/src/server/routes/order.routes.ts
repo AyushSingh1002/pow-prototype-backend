@@ -5,6 +5,7 @@ import { validateRequest } from "../middleware/validate";
 import {
   createOrderHeadersSchema,
   createOrderBodySchema,
+  getOrderParamsSchema,
 } from "../schemas/order.schemas";
 import { ForbiddenError, NotFoundError } from "../../core/errors/AppError";
 import { ErrorCodes } from "../../core/errors/errorCodes";
@@ -45,6 +46,7 @@ export function createOrderRouter(orderService: OrderService): Router {
   // GET /api/orders/:id (Authenticated, scoped to customer)
   router.get(
     "/orders/:id",
+    validateRequest({ params: getOrderParamsSchema }),
     requireAuth,
     async (req: Request, res: Response, next: NextFunction) => {
       try {

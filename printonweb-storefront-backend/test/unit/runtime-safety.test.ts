@@ -9,7 +9,15 @@ describe("runtime safety", () => {
 
   it("refuses production while demo services are wired", () => {
     expect(() => assertDemoRuntimeAllowed("production")).toThrow(
-      /Production startup is disabled/
+      /Production startup is disabled: demo services are configured/
     );
+  });
+
+  it("refuses production if demo mode is explicitly enabled", () => {
+    expect(() =>
+      assertDemoRuntimeAllowed("production", {
+        enableDemoMode: true,
+      })
+    ).toThrow(/ENABLE_DEMO_MODE must be false/);
   });
 });

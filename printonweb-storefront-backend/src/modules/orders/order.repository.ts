@@ -3,7 +3,7 @@ import {
   OrderStatus,
   OrderStatusHistoryItem,
 } from "./order.types";
-import { ConflictError } from "../../core/errors/AppError";
+import { ConflictError, NotFoundError } from "../../core/errors/AppError";
 import { ErrorCodes } from "../../core/errors/errorCodes";
 
 export interface IOrderRepository {
@@ -76,7 +76,10 @@ export class InMemoryOrderRepository implements IOrderRepository {
   ): Promise<OrderRecord> {
     const order = this.orders.get(id);
     if (!order) {
-      throw new Error(`Order ${id} not found`);
+      throw new NotFoundError(
+        `Order '${id}' not found.`,
+        ErrorCodes.ORDER_NOT_FOUND
+      );
     }
 
     const updated: OrderRecord = {

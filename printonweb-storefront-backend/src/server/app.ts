@@ -32,16 +32,48 @@ export interface AppDependencies {
   rateLimiter?: InMemoryRateLimiter;
 }
 
-export function assertDemoRuntimeAllowed(nodeEnv: string): void {
-  if (nodeEnv === "production") {
+export function assertDemoRuntimeAllowed(
+  nodeEnv: string,
+  options: { enableDemoMode?: boolean; demoServices?: string[] } = {}
+): void {
+  const { enableDemoMode = false, demoServices = [] } = options;
+
+  if (nodeEnv !== "production") {
+    return;
+  }
+
+  if (enableDemoMode) {
     throw new Error(
-      "Production startup is disabled: persistent repositories, verified authentication, object storage, and payment processing are not configured."
+      "Production startup is disabled: ENABLE_DEMO_MODE must be false before launch."
     );
   }
+
+  const configuredDemoServices = demoServices.length
+    ? demoServices
+    : [
+        "In-memory repositories",
+        "Sample pricing",
+        "Demo auth profiles",
+        "Demo upload service",
+        "Demo payment service",
+      ];
+
+  throw new Error(
+    `Production startup is disabled: demo services are configured and must be replaced before launch: ${configuredDemoServices.join(", ")}.`
+  );
 }
 
 export function createApp(deps: AppDependencies = {}): Express {
-  assertDemoRuntimeAllowed(env.NODE_ENV);
+  assertDemoRuntimeAllowed(env.NODE_ENV, {
+    enableDemoMode: env.ENABLE_DEMO_MODE,
+    demoServices: [
+      "In-memory repositories",
+      "Sample pricing",
+      "Demo auth profiles",
+      "Demo upload service",
+      "Demo payment service",
+    ],
+  });
 
   const app = express();
 

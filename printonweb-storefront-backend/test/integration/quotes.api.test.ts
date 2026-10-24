@@ -37,6 +37,53 @@ describe("Quotes API - POST /api/quotes Integration Tests", () => {
     expect(res.headers).toHaveProperty("x-request-id");
   });
 
+  it("accepts business card runs of 10 and rejects quantities below 10", async () => {
+    const smallRun = await request(app)
+      .post("/api/quotes")
+      .send({ ...validQuotePayload, quantity: 10 });
+    expect(smallRun.status).toBe(201);
+
+    const belowMinimum = await request(app)
+      .post("/api/quotes")
+      .send({ ...validQuotePayload, quantity: 9 });
+    expect(belowMinimum.status).toBe(422);
+    expect(belowMinimum.body.error).toHaveProperty("code", "INVALID_QUANTITY");
+  });
+
+  it("allows a single custom book with its own page-count and finish options", async () => {
+    const response = await request(app)
+      .post("/api/quotes")
+      .send({
+        productId: "books",
+        options: {
+          size: "a5-portrait",
+          interior: "bw",
+          paper: "natural-white",
+          binding: "paperback",
+          pages: "200",
+          finish: "foil",
+        },
+        quantity: 1,
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.total).toBeGreaterThan(0);
+  });
+
+  it("preserves only bounded request IDs with safe characters", async () => {
+    const validRes = await request(app)
+      .post("/api/quotes")
+      .set("x-request-id", "client.trace-01")
+      .send(validQuotePayload);
+    expect(validRes.headers["x-request-id"]).toBe("client.trace-01");
+
+    const invalidRes = await request(app)
+      .post("/api/quotes")
+      .set("x-request-id", "x".repeat(65))
+      .send(validQuotePayload);
+    expect(invalidRes.headers["x-request-id"]).toMatch(/^req_[a-f0-9]{16}$/);
+  });
+
   it("prices book page-count and cover-finish selections on the server", async () => {
     const options = {
       size: "a5-portrait",
@@ -136,7 +183,7 @@ describe("Quotes API - POST /api/quotes Integration Tests", () => {
       .post("/api/quotes")
       .send({
         ...validQuotePayload,
-        quantity: 10, // Below minQuantity (50)
+        quantity: 9, // Below minQuantity (10)
       });
 
     expect(res.status).toBe(422);
