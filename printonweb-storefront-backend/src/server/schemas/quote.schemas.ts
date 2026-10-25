@@ -2,16 +2,14 @@ import { z } from "zod";
 
 export const createQuoteBodySchema = z
   .object({
-    productId: z.string({ required_error: "productId is required" }).min(1, "productId cannot be empty"),
-    options: z.record(z.string(), z.string(), {
-      required_error: "options object is required",
-    }),
+    productId: z.string({ error: "productId is required" }).min(1, "productId cannot be empty"),
+    options: z.record(z.string(), z.string()),
     quantity: z
-      .number({ required_error: "quantity is required" })
+      .number({ error: "quantity is required" })
       .int("quantity must be an integer")
       .positive("quantity must be a positive integer"),
   })
-  .strict({ message: "Unknown fields are rejected. Client cannot submit pricing or extraneous fields." });
+  .strict();
 
 export const getQuoteParamsSchema = z
   .object({

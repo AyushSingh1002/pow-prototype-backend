@@ -84,3 +84,9 @@ export class ForbiddenError extends AppError {
     super(403, ErrorCodes.FORBIDDEN, message);
   }
 }
+
+export class ServiceUnavailableError extends AppError {
+  constructor(message: string) {
+    super(503, ErrorCodes.SERVICE_UNAVAILABLE, message);
+  }
+}

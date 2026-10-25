@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   FileMetadataRecord,
   InitiateUploadInput,
@@ -25,6 +25,15 @@ export interface IUploadService {
   getFileMetadata(fileId: string): Promise<FileMetadataRecord | null>;
 }
 
+export interface IProductionUploadService extends IUploadService {
+  initiateUploadForCustomer(
+    input: InitiateUploadInput,
+    customerId: string
+  ): Promise<InitiateUploadResult>;
+  completeUpload(fileId: string, customerId: string): Promise<FileMetadataRecord>;
+  createReadUrl(fileId: string, customerId: string): Promise<string>;
+}
+
 export class StubbedUploadService implements IUploadService {
   private files = new Map<string, FileMetadataRecord>();
 
@@ -48,8 +57,8 @@ export class StubbedUploadService implements IUploadService {
       .replace(/[^a-zA-Z0-9._-]/g, "_")
       .slice(0, 255);
 
-    const fileId = uuidv4();
-    const serverStorageKey = `artwork/${uuidv4()}`; // Private key never exposed to client
+    const fileId = randomUUID();
+    const serverStorageKey = `artwork/${randomUUID()}`; // Private key never exposed to client
 
     const record: FileMetadataRecord = {
       id: fileId,

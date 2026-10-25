@@ -24,7 +24,7 @@ export interface Product {
   maxQuantity: number;
   sampleStartingPrice: number; // In minor units (paise)
   currency: string;
-  isSample: true;
+  isSample: boolean;
 }
 
 export interface ProductListQuery {

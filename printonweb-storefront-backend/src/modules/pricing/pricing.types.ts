@@ -31,10 +31,10 @@ export interface ProductPricingConfig {
 }
 
 export interface PricingConfig {
-  source: "SAMPLE: not PrintOnWeb pricing";
+  source: string;
   version: string;
   currency: string;
-  isSample: true;
+  isSample: boolean;
   products: Record<string, ProductPricingConfig>;
 }
 
@@ -65,7 +65,7 @@ export interface PricingBreakdown {
   total: number; // Grand total in minor units
   currency: string;
   pricingConfigVersion: string;
-  isSample: true;
+  isSample: boolean;
   taxIncluded: false;
   shippingIncluded: false;
 }

@@ -9,6 +9,7 @@ const initiateUploadSchema = z
     originalFilename: z.string().min(1),
     mimeType: z.string().min(1),
     sizeBytes: z.number().int().positive(),
+    slotId: z.enum(["interior", "cover", "primary", "back", "secondary", "cutline", "design_file"]).optional(),
     quoteId: z.string().uuid().optional(),
     orderId: z.string().uuid().optional(),
   })

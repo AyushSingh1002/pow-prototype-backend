@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { IQuoteRepository } from "./quote.repository";
 import { CreateQuoteDTO, QuoteRecord } from "./quote.types";
 import { PricingConfig } from "../pricing/pricing.types";
@@ -26,7 +26,7 @@ export class QuoteService {
     const expiresAt = new Date(now.getTime() + this.ttlMinutes * 60 * 1000);
 
     const record: QuoteRecord = {
-      id: uuidv4(),
+      id: randomUUID(),
       productId: breakdown.productId,
       validatedOptions: { ...dto.options },
       quantity: breakdown.quantity,
@@ -34,11 +34,12 @@ export class QuoteService {
       total: breakdown.total,
       currency: breakdown.currency,
       pricingConfigVersion: breakdown.pricingConfigVersion,
-      isSample: true,
+      isSample: this.pricingConfig.isSample,
       taxIncluded: false,
       shippingIncluded: false,
       expiresAt: expiresAt.toISOString(),
       createdAt: now.toISOString(),
+      customerId: dto.customerId,
     };
 
     return this.repository.save(record);

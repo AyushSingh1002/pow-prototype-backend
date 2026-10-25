@@ -7,8 +7,12 @@ describe("runtime safety", () => {
     expect(() => assertDemoRuntimeAllowed("test")).not.toThrow();
   });
 
+  it("allows production when no demo services are wired", () => {
+    expect(() => assertDemoRuntimeAllowed("production", { demoServices: [] })).not.toThrow();
+  });
+
   it("refuses production while demo services are wired", () => {
-    expect(() => assertDemoRuntimeAllowed("production")).toThrow(
+    expect(() => assertDemoRuntimeAllowed("production", { demoServices: ["Demo payments"] })).toThrow(
       /Production startup is disabled: demo services are configured/
     );
   });

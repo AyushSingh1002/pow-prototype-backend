@@ -2,31 +2,55 @@ import express, { Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { env } from "../config/env";
-import { samplePricingConfig } from "../config/samplePricingConfig";
+import { loadPricingConfig } from "../config/pricingConfig";
+import { loadProductionCatalogue } from "../config/catalogueConfig";
 import { requestIdMiddleware } from "./middleware/requestId";
 import { requestLoggerMiddleware } from "./middleware/requestLogger";
 import { enforcePayloadLimits } from "./middleware/security";
 import { errorHandlerMiddleware } from "./middleware/errorHandler";
 import { InMemoryRateLimiter } from "./middleware/rateLimiter";
-import { InMemoryCatalogueRepository } from "../modules/catalogue/catalogue.repository";
+import {
+  ICatalogueRepository,
+  InMemoryCatalogueRepository,
+  PostgresCatalogueRepository,
+} from "../modules/catalogue/catalogue.repository";
 import { CatalogueService } from "../modules/catalogue/catalogue.service";
-import { InMemoryQuoteRepository } from "../modules/quotes/quote.repository";
+import {
+  IQuoteRepository,
+  InMemoryQuoteRepository,
+  PostgresQuoteRepository,
+} from "../modules/quotes/quote.repository";
 import { QuoteService } from "../modules/quotes/quote.service";
-import { InMemoryOrderRepository } from "../modules/orders/order.repository";
+import {
+  IOrderRepository,
+  InMemoryOrderRepository,
+  PostgresOrderRepository,
+} from "../modules/orders/order.repository";
 import { OrderService } from "../modules/orders/order.service";
-import { StubbedUploadService } from "../modules/uploads/upload.service";
-import { DemoPaymentService } from "../modules/payments/payment.service";
+import {
+  IProductionUploadService,
+  StubbedUploadService,
+} from "../modules/uploads/upload.service";
+import { R2UploadService } from "../modules/uploads/r2-upload.service";
+import {
+  DemoPaymentService,
+  ProductionPaymentService,
+  RazorpayPaymentGateway,
+} from "../modules/payments/payment.service";
+import { ProductionCheckoutPricingService } from "../modules/orders/checkout-pricing.service";
 import { createCatalogueRouter } from "./routes/catalogue.routes";
 import { createQuoteRouter } from "./routes/quote.routes";
 import { createOrderRouter } from "./routes/order.routes";
 import { createDemoRouter } from "./routes/demo.routes";
+import { createPaymentRouter } from "./routes/payment.routes";
+import { createUploadRouter } from "./routes/upload.routes";
 import { PricingConfig } from "../modules/pricing/pricing.types";
 
 export interface AppDependencies {
-  catalogueRepository?: InMemoryCatalogueRepository;
-  quoteRepository?: InMemoryQuoteRepository;
-  orderRepository?: InMemoryOrderRepository;
-  uploadService?: StubbedUploadService;
+  catalogueRepository?: ICatalogueRepository;
+  quoteRepository?: IQuoteRepository;
+  orderRepository?: IOrderRepository;
+  uploadService?: StubbedUploadService | IProductionUploadService;
   paymentService?: DemoPaymentService;
   pricingConfig?: PricingConfig;
   rateLimiter?: InMemoryRateLimiter;
@@ -48,31 +72,40 @@ export function assertDemoRuntimeAllowed(
     );
   }
 
-  const configuredDemoServices = demoServices.length
-    ? demoServices
-    : [
+  if (demoServices.length > 0) {
+    throw new Error(
+      `Production startup is disabled: demo services are configured and must be replaced before launch: ${demoServices.join(", ")}.`
+    );
+  }
+}
+
+export function createApp(deps: AppDependencies = {}): Express {
+  const injectedDemoServices = [
+    deps.catalogueRepository instanceof InMemoryCatalogueRepository
+      ? "In-memory catalogue repository"
+      : undefined,
+    deps.quoteRepository instanceof InMemoryQuoteRepository
+      ? "In-memory quote repository"
+      : undefined,
+    deps.orderRepository instanceof InMemoryOrderRepository
+      ? "In-memory order repository"
+      : undefined,
+    deps.uploadService instanceof StubbedUploadService ? "Demo upload service" : undefined,
+    deps.paymentService ? "Demo payment service" : undefined,
+    deps.pricingConfig?.isSample ? "Sample pricing" : undefined,
+  ].filter((service): service is string => Boolean(service));
+  const demoServices = env.ENABLE_DEMO_MODE
+    ? [
         "In-memory repositories",
         "Sample pricing",
         "Demo auth profiles",
         "Demo upload service",
         "Demo payment service",
-      ];
-
-  throw new Error(
-    `Production startup is disabled: demo services are configured and must be replaced before launch: ${configuredDemoServices.join(", ")}.`
-  );
-}
-
-export function createApp(deps: AppDependencies = {}): Express {
+      ]
+    : injectedDemoServices;
   assertDemoRuntimeAllowed(env.NODE_ENV, {
     enableDemoMode: env.ENABLE_DEMO_MODE,
-    demoServices: [
-      "In-memory repositories",
-      "Sample pricing",
-      "Demo auth profiles",
-      "Demo upload service",
-      "Demo payment service",
-    ],
+    demoServices: env.NODE_ENV === "production" ? demoServices : [],
   });
 
   const app = express();
@@ -98,21 +131,59 @@ export function createApp(deps: AppDependencies = {}): Express {
   app.use(enforcePayloadLimits);
 
   // JSON Body Parser with explicit size cap
-  app.use(express.json({ limit: env.MAX_BODY_BYTES }));
+  app.use(
+    express.json({
+      limit: env.MAX_BODY_BYTES,
+      verify: (req, _res, body) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
+      },
+    })
+  );
 
   // Dependency Resolution
-  const catalogueRepo = deps.catalogueRepository || new InMemoryCatalogueRepository();
+  const catalogueRepo =
+    deps.catalogueRepository ||
+    (env.ENABLE_DEMO_MODE
+      ? new InMemoryCatalogueRepository()
+      : new PostgresCatalogueRepository());
   const catalogueService = new CatalogueService(catalogueRepo);
 
-  const pricingConfig = deps.pricingConfig || samplePricingConfig;
-  const quoteRepo = deps.quoteRepository || new InMemoryQuoteRepository();
+  const pricingConfig = deps.pricingConfig || loadPricingConfig();
+  if (!env.ENABLE_DEMO_MODE) {
+    loadProductionCatalogue();
+  }
+  const quoteRepo =
+    deps.quoteRepository ||
+    (env.ENABLE_DEMO_MODE
+      ? new InMemoryQuoteRepository()
+      : new PostgresQuoteRepository());
   const quoteService = new QuoteService(quoteRepo, pricingConfig, env.QUOTE_TTL_MINUTES);
 
-  const orderRepo = deps.orderRepository || new InMemoryOrderRepository();
-  const orderService = new OrderService(orderRepo, quoteRepo, pricingConfig);
+  const orderRepo =
+    deps.orderRepository ||
+    (env.ENABLE_DEMO_MODE
+      ? new InMemoryOrderRepository()
+      : new PostgresOrderRepository());
+  const orderService = new OrderService(
+    orderRepo,
+    quoteRepo,
+    pricingConfig,
+    env.ENABLE_DEMO_MODE ? undefined : new ProductionCheckoutPricingService()
+  );
 
-  const uploadService = deps.uploadService || new StubbedUploadService();
-  const paymentService = deps.paymentService || new DemoPaymentService();
+  const uploadService =
+    deps.uploadService ||
+    (env.ENABLE_DEMO_MODE ? new StubbedUploadService() : new R2UploadService());
+  const paymentService = env.ENABLE_DEMO_MODE
+    ? deps.paymentService || new DemoPaymentService()
+    : undefined;
+  const productionPaymentService = env.ENABLE_DEMO_MODE
+    ? undefined
+    : new ProductionPaymentService(
+        new RazorpayPaymentGateway(),
+        orderRepo,
+        orderService
+      );
 
   const rateLimiter = deps.rateLimiter || new InMemoryRateLimiter(
     env.RATE_LIMIT_WINDOW_MS,
@@ -121,17 +192,27 @@ export function createApp(deps: AppDependencies = {}): Express {
 
   // Mount API routers
   const apiRouter = express.Router();
+  if (productionPaymentService) {
+    if (!("completeUpload" in uploadService)) {
+      throw new Error("Production upload service is not configured.");
+    }
+    apiRouter.use(createPaymentRouter(productionPaymentService, orderService));
+    apiRouter.use(createUploadRouter(uploadService as IProductionUploadService, quoteService));
+  }
   apiRouter.use(createCatalogueRouter(catalogueService));
   apiRouter.use(createQuoteRouter(quoteService, rateLimiter));
   apiRouter.use(createOrderRouter(orderService));
-  apiRouter.use(createDemoRouter(uploadService, paymentService));
+  if (env.ENABLE_DEMO_MODE) {
+    if (!paymentService) throw new Error("Demo payment service is not configured.");
+    apiRouter.use(createDemoRouter(uploadService as StubbedUploadService, paymentService));
+  }
 
   // Health check endpoint
   apiRouter.get("/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
       pricingConfigVersion: pricingConfig.version,
-      isSample: true,
+      isSample: pricingConfig.isSample,
       timestamp: new Date().toISOString(),
     });
   });

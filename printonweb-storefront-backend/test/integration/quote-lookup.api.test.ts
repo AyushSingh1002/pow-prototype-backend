@@ -53,7 +53,7 @@ describe("Quote Lookup API - GET /api/quotes/:id Integration Tests", () => {
   });
 
   it("returns 404 QUOTE_NOT_FOUND when quote UUID does not exist", async () => {
-    const nonExistentUuid = "99999999-9999-9999-9999-999999999999";
+    const nonExistentUuid = "99999999-9999-4999-8999-999999999999";
     const res = await request(app).get(`/api/quotes/${nonExistentUuid}`);
 
     expect(res.status).toBe(404);

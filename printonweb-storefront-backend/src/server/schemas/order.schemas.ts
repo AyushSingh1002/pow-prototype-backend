@@ -3,7 +3,7 @@ import { z } from "zod";
 export const createOrderHeadersSchema = z
   .object({
     "idempotency-key": z
-      .string({ required_error: "Idempotency-Key header is required" })
+      .string({ error: "Idempotency-Key header is required" })
       .min(1, "Idempotency-Key cannot be empty"),
     authorization: z.string().optional(),
   })
@@ -12,10 +12,24 @@ export const createOrderHeadersSchema = z
 export const createOrderBodySchema = z
   .object({
     quoteId: z
-      .string({ required_error: "quoteId is required" })
+      .string({ error: "quoteId is required" })
       .uuid("quoteId must be a valid UUID"),
+    contact: z
+      .object({
+        name: z.string().trim().min(2).max(120),
+        phone: z
+          .string()
+          .trim()
+          .transform((value) => value.replace(/\s+/g, ""))
+          .pipe(z.string().regex(/^((\+91|91|0)?[6-9]\d{9})$/)),
+        address: z.string().trim().min(8).max(500),
+        city: z.string().trim().min(2).max(120),
+        pincode: z.string().regex(/^\d{6}$/),
+      })
+      .strict()
+      .optional(),
   })
-  .strict({ message: "Unknown fields in order creation are rejected." });
+  .strict();
 
 export const getOrderParamsSchema = z
   .object({

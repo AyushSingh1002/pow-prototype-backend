@@ -7,8 +7,13 @@ import {
   createOrderBodySchema,
   getOrderParamsSchema,
 } from "../schemas/order.schemas";
-import { ForbiddenError, NotFoundError } from "../../core/errors/AppError";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "../../core/errors/AppError";
 import { ErrorCodes } from "../../core/errors/errorCodes";
+import { env } from "../../config/env";
 
 export function createOrderRouter(orderService: OrderService): Router {
   const router = Router();
@@ -26,16 +31,27 @@ export function createOrderRouter(orderService: OrderService): Router {
         const idempotencyKey = req.headers["idempotency-key"] as string;
         const customerId = req.user!.id;
         const quoteId = req.body.quoteId;
+        if (!env.ENABLE_DEMO_MODE && !req.body.contact) {
+          throw new ValidationError("Delivery contact details are required for production orders.");
+        }
 
         const order = await orderService.createDraftOrder({
           quoteId,
           customerId,
           idempotencyKey,
+          contact: req.body.contact,
         });
 
         res.status(201).json({
           id: order.id,
           status: "draft",
+          total: order.total,
+          currency: order.currency,
+          lineItems: [
+            { code: "PRINT", amount: order.total - (order.taxAmount ?? 0) - (order.shippingAmount ?? 0) },
+            { code: "TAX", amount: order.taxAmount ?? 0 },
+            { code: "SHIPPING", amount: order.shippingAmount ?? 0 },
+          ],
         });
       } catch (err) {
         next(err);

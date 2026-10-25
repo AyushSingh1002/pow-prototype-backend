@@ -25,12 +25,25 @@ export interface OrderRecord {
   currency: string;
   createdAt: string;
   updatedAt: string;
+  taxAmount?: number;
+  shippingAmount?: number;
+  contact?: DeliveryContact;
+  paymentOrderId?: string;
+}
+
+export interface DeliveryContact {
+  name: string;
+  phone: string;
+  address: string;
+  city: string;
+  pincode: string;
 }
 
 export interface CreateOrderDTO {
   quoteId: string;
   customerId: string;
   idempotencyKey: string;
+  contact?: DeliveryContact;
 }
 
 export interface TransitionOrderDTO {

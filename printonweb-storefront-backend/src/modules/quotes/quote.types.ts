@@ -4,6 +4,7 @@ export interface CreateQuoteDTO {
   productId: string;
   options: Record<string, string>;
   quantity: number;
+  customerId?: string;
 }
 
 export interface QuoteRecord {
@@ -15,11 +16,12 @@ export interface QuoteRecord {
   total: number; // Integer minor units
   currency: string;
   pricingConfigVersion: string;
-  isSample: true;
+  isSample: boolean;
   taxIncluded: false;
   shippingIncluded: false;
   expiresAt: string; // ISO 8601
   createdAt: string; // ISO 8601
+  customerId?: string;
 }
 
 export type QuoteResponseDTO = Omit<QuoteRecord, "validatedOptions">;

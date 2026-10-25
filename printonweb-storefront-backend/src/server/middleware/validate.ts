@@ -13,13 +13,13 @@ export function validateRequest(schemas: RequestValidationSchemas) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       if (schemas.headers) {
-        req.headers = schemas.headers.parse(req.headers);
+        Object.assign(req.headers, schemas.headers.parse(req.headers));
       }
       if (schemas.params) {
-        req.params = schemas.params.parse(req.params);
+        Object.assign(req.params, schemas.params.parse(req.params));
       }
       if (schemas.query) {
-        req.query = schemas.query.parse(req.query);
+        Object.assign(req.query, schemas.query.parse(req.query));
       }
       if (schemas.body) {
         req.body = schemas.body.parse(req.body);

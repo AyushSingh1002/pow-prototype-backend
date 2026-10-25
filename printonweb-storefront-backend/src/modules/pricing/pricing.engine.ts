@@ -199,7 +199,7 @@ export function estimate(
     total: grandTotal,
     currency: config.currency,
     pricingConfigVersion: config.version,
-    isSample: true,
+    isSample: config.isSample,
     taxIncluded: false,
     shippingIncluded: false,
   };

@@ -140,6 +140,33 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
     expect(replayRes.body.id).toBe(firstRes.body.id);
   });
 
+  it("rejects idempotent replay when delivery details differ", async () => {
+    const contact = {
+      name: "Demo Customer",
+      phone: "+919876543210",
+      address: "12 Sample Street",
+      city: "New Delhi",
+      pincode: "110001",
+    };
+    const firstRes = await request(app)
+      .post("/api/orders")
+      .set("Authorization", "Bearer cust_author_42")
+      .set("Idempotency-Key", "contact-idempotency-key")
+      .send({ quoteId: validQuoteId, contact });
+    const replayRes = await request(app)
+      .post("/api/orders")
+      .set("Authorization", "Bearer cust_author_42")
+      .set("Idempotency-Key", "contact-idempotency-key")
+      .send({
+        quoteId: validQuoteId,
+        contact: { ...contact, pincode: "400001" },
+      });
+
+    expect(firstRes.status).toBe(201);
+    expect(replayRes.status).toBe(409);
+    expect(replayRes.body.error).toHaveProperty("code", "DUPLICATE_IDEMPOTENCY_KEY");
+  });
+
   it("returns one order for concurrent requests with the same idempotency key", async () => {
     const idempotencyKey = "order-key-concurrent";
     const requests = Array.from({ length: 4 }, () =>
@@ -157,7 +184,7 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
   });
 
   it("rejects duplicate idempotency key used with conflicting quoteId with 409", async () => {
-    const otherQuoteId = "44444444-4444-4444-4444-444444444444";
+    const otherQuoteId = "44444444-4444-4444-8444-444444444444";
     await quoteRepo.save({
       ...activeQuote,
       id: otherQuoteId,
@@ -174,7 +201,7 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
   });
 
   it("rejects conversion of expired quote with 410 QUOTE_EXPIRED", async () => {
-    const expiredQuoteId = "55555555-5555-5555-5555-555555555555";
+    const expiredQuoteId = "55555555-5555-4555-8555-555555555555";
     await quoteRepo.save({
       ...activeQuote,
       id: expiredQuoteId,
@@ -192,7 +219,7 @@ describe("Orders API - POST /api/orders Integration Tests", () => {
   });
 
   it("rejects order creation if pricing formula changed since quote was generated with 422 PRICE_MISMATCH", async () => {
-    const tamperedPriceQuoteId = "66666666-6666-6666-6666-666666666666";
+    const tamperedPriceQuoteId = "66666666-6666-4666-8666-666666666666";
     await quoteRepo.save({
       ...activeQuote,
       id: tamperedPriceQuoteId,
