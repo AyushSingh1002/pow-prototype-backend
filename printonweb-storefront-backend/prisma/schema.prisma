@@ -61,7 +61,7 @@ model PrintOption {
 }
 
 model Quote {
-  id                   String      @id @default(uuid())
+  id                   String      @id @default(uuid()) @db.Uuid
   productId            String
   selectedOptions      Json        // Validated options map
   quantity             Int
@@ -87,27 +87,84 @@ model Quote {
 }
 
 model Order {
-  id             String               @id @default(uuid())
-  quoteId        String
+  id             String               @id @default(uuid()) @db.Uuid
+  quoteId        String               @db.Uuid
   customerId     String
   idempotencyKey String
   status         OrderStatus          @default(DRAFT)
   total          Int                  // Minor units (recomputed & confirmed)
   currency       String
+  assignedStaffId String?             @db.Uuid
+  claimedAt      DateTime?
+  deliveryMethod String               @default("SHIP")
+  deliveryDeadline DateTime?
+  paymentLinkId String?               @unique @map("payment_link_id")
+  paymentLinkUrl String?              @map("payment_link_url")
+  paymentLinkExpiresAt DateTime?      @map("payment_link_expires_at")
+  paymentLinkState String?            @map("payment_link_state")
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   quote          Quote                @relation(fields: [quoteId], references: [id])
+  assignedStaff  StaffAccount?         @relation("AssignedStaff", fields: [assignedStaffId], references: [userId])
   statusHistory  OrderStatusHistory[]
   files          File[]
+  staffNotes     StaffOrderNote[]
+  notifications  NotificationOutbox[]
 
   @@unique([customerId, idempotencyKey])
   @@index([customerId, createdAt])
   @@map("orders")
 }
 
+model StaffAccount {
+  userId      String           @id @db.Uuid
+  displayName String           @map("display_name")
+  role        String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  assignedOrders Order[]       @relation("AssignedStaff")
+  notes       StaffOrderNote[]
+
+  @@map("staff_accounts")
+}
+
+model StaffOrderNote {
+  id              String       @id @default(uuid()) @db.Uuid
+  orderId         String       @db.Uuid @map("order_id")
+  staffUserId     String       @db.Uuid @map("staff_user_id")
+  note            String
+  customerVisible Boolean      @default(false) @map("customer_visible")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff           StaffAccount @relation(fields: [staffUserId], references: [userId])
+
+  @@index([orderId, createdAt])
+  @@map("staff_order_notes")
+}
+
+model NotificationOutbox {
+  id                  String   @id @default(uuid()) @db.Uuid
+  jobKey              String   @unique @map("job_key")
+  orderId             String   @db.Uuid @map("order_id")
+  eventType           String   @map("event_type")
+  payload             Json
+  status              String   @default("PENDING")
+  attempts            Int      @default(0)
+  maxAttempts         Int      @default(5) @map("max_attempts")
+  lastError           String?  @map("last_error")
+  nextAttemptAt       DateTime @default(now()) @map("next_attempt_at")
+  processingStartedAt DateTime? @map("processing_started_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  deliveredAt         DateTime? @map("delivered_at")
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt, createdAt])
+  @@map("notification_outbox")
+}
+
 model OrderStatusHistory {
-  id        String      @id @default(uuid())
-  orderId   String
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid
   fromStatus OrderStatus?
   toStatus  OrderStatus
   reason    String?
@@ -119,14 +176,14 @@ model OrderStatusHistory {
 }
 
 model File {
-  id           String     @id @default(uuid())
+  id           String     @id @default(uuid()) @db.Uuid
   storageKey   String     @unique // Server-generated UUID, never exposed directly to clients
   originalName String     // Sanitized display name only
   mimeType     String
   sizeBytes    Int
   status       FileStatus @default(PENDING)
-  quoteId      String?
-  orderId      String?
+  quoteId      String?    @db.Uuid
+  orderId      String?    @db.Uuid
   createdAt    DateTime   @default(now())
   quote        Quote?     @relation(fields: [quoteId], references: [id])
   order        Order?     @relation(fields: [orderId], references: [id])

@@ -59,14 +59,22 @@ const envSchema = z
     DATABASE_URL: optionalString(),
     SUPABASE_URL: optionalUrl(),
     SUPABASE_ANON_KEY: optionalString(),
+    EMAIL_PROVIDER_API_KEY: optionalString(),
+    EMAIL_FROM_ADDRESS: optionalString(),
+    STAFF_DASHBOARD_URL: optionalUrl(),
+    STAFF_NOTIFICATION_RETRY_MAX: z
+      .string()
+      .default("5")
+      .transform((val) => parseInt(val, 10))
+      .pipe(z.number().int().positive()),
     STORAGE_BUCKET: optionalString(),
     STORAGE_REGION: optionalString(),
     STORAGE_ACCESS_KEY_ID: optionalString(),
     STORAGE_SECRET_ACCESS_KEY: optionalString(),
     STORAGE_ENDPOINT: optionalUrl(),
-    PAYMENT_SECRET_KEY: optionalString(),
-    PAYMENT_WEBHOOK_SECRET: optionalString(),
-    PAYMENT_KEY_ID: optionalString(),
+    RAZORPAY_KEY_ID: optionalString(),
+    RAZORPAY_KEY_SECRET: optionalString(),
+    RAZORPAY_WEBHOOK_SECRET: optionalString(),
     FILE_SCAN_URL: optionalUrl(),
     FILE_SCAN_TOKEN: optionalString(),
     PREFLIGHT_SERVICE_URL: optionalUrl(),
@@ -115,6 +123,7 @@ const envSchema = z
       }
 
       if (
+        values.NODE_ENV === "production" &&
         values.ALLOWED_ORIGINS.some((origin) =>
           /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
         )
@@ -130,9 +139,12 @@ const envSchema = z
         ["DATABASE_URL", values.DATABASE_URL],
         ["SUPABASE_URL", values.SUPABASE_URL],
         ["SUPABASE_ANON_KEY", values.SUPABASE_ANON_KEY],
-        ["PAYMENT_KEY_ID", values.PAYMENT_KEY_ID],
-        ["PAYMENT_SECRET_KEY", values.PAYMENT_SECRET_KEY],
-        ["PAYMENT_WEBHOOK_SECRET", values.PAYMENT_WEBHOOK_SECRET],
+        ["EMAIL_PROVIDER_API_KEY", values.EMAIL_PROVIDER_API_KEY],
+        ["EMAIL_FROM_ADDRESS", values.EMAIL_FROM_ADDRESS],
+        ["STAFF_DASHBOARD_URL", values.STAFF_DASHBOARD_URL],
+        ["RAZORPAY_KEY_ID", values.RAZORPAY_KEY_ID],
+        ["RAZORPAY_KEY_SECRET", values.RAZORPAY_KEY_SECRET],
+        ["RAZORPAY_WEBHOOK_SECRET", values.RAZORPAY_WEBHOOK_SECRET],
         ["STORAGE_BUCKET", values.STORAGE_BUCKET],
         ["STORAGE_REGION", values.STORAGE_REGION],
         ["STORAGE_ACCESS_KEY_ID", values.STORAGE_ACCESS_KEY_ID],
@@ -159,15 +171,28 @@ const envSchema = z
         ["PRIVACY_POLICY_URL", values.PRIVACY_POLICY_URL],
       ];
 
-      for (const [key, value] of productionRequirements) {
-        if (
-          !value?.trim() ||
-          /^(replace-me|your-|example|placeholder|changeme)/i.test(value.trim())
-        ) {
+      if (values.NODE_ENV === "production") {
+        for (const [key, value] of productionRequirements) {
+          if (
+            !value?.trim() ||
+            /^(replace-me|your-|example|placeholder|changeme)/i.test(value.trim())
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [key],
+              message: `${key} must contain a real, non-placeholder value when demo mode is disabled.`,
+            });
+          }
+        }
+      }
+
+      for (const key of ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET"] as const) {
+        const value = values[key];
+        if (!value?.trim()) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: [key],
-            message: `${key} must contain a real, non-placeholder value when demo mode is disabled.`,
+            message: `${key} is required when demo mode is disabled.`,
           });
         }
       }

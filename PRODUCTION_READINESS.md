@@ -2,23 +2,59 @@
 
 ## Current Status
 
-Press & Proof is a prototype, not a production storefront. The backend now refuses to start with `NODE_ENV=production` while demo services are configured. Do not bypass that guard to deploy.
+Press & Proof is **not production-ready yet**. Production-oriented code paths are implemented and locally validated, but required business decisions, provider provisioning, a provisioned PostgreSQL staging run, and end-to-end provider verification remain outstanding. Do not enable live checkout until every launch blocker below is cleared.
+
+`ENABLE_DEMO_MODE=true` preserves the prototype: in-memory repositories, sample prices, demo identities, demo upload metadata, and the explicit zero-charge demo checkout. With demo mode disabled, the backend requires production configuration, uses PostgreSQL, validates Supabase sessions, and enables Razorpay, R2, scanning/preflight, configured tax/shipping, fulfillment, and retention paths.
+
+## Implementation Completion Report
+
+| # | Area | Changes implemented | Preserved behavior | Verification / outstanding |
+|---|---|---|---|---|
+| 1 | Payments | Added Razorpay order creation, amount/currency checks, raw-body HMAC webhook verification, event idempotency/recovery, state-machine transitions, production checkout UI, and webhook-backed confirmation polling. Staff-created links are full-amount, email-only, and expire after 24 hours; signed `payment_link.paid` confirms and `payment_link.expired` cancels unpaid orders. Invalid signatures return HTTP 400; tests verify browser-return/webhook ordering, replay handling, link expiry, and email delivery. | Demo payment API and zero-charge disclosure remain demo-only. | Sandbox credentials, provider webhook configuration, crash-window testing, and real payment/capture/refund staging tests remain outstanding. Razorpay uses `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`. |
+| 2 | Authentication and ownership | Added Supabase bearer-token verification; customer identity is derived from verified Supabase user data. Production quotes and uploads are customer-scoped. Frontend OTP sign-in/session restoration and sign-out are wired. | Fixed demo identities still work only in demo/test mode. | Provider project, email/OTP policy, production secrets, abuse/rate-limit configuration, and staging verification are not provisioned. |
+| 3 | Artwork uploads | Added authenticated quote-owned upload initiation, short-lived R2 presigned PUT URLs, size/MIME and magic-byte checks, scanner/preflight calls, server-side page/DPI/bleed gates, signed private reads, immutable final-object promotion, and retention deletion. Orders now require every configured required slot for supported product workflows; fulfillment receives temporary private download URLs for the latest associated files. | Local previews and stub upload registration remain for demo mode; production cannot proceed on a failed scan/preflight. | Scanner/preflight service contracts, R2 CORS/bucket permissions, staging large-file/rewrite/race checks, and operational monitoring remain unverified. |
+| 4 | Persistence and order safety | Added PostgreSQL repositories and migration for products/options, quotes, orders, status history, payment events, files, idempotency, and fulfillment outbox. Added a validated, transactional catalogue seeder requiring approved production configuration; order saves attach scanned quote artwork transactionally. Replays must match quote and delivery details. | In-memory repositories remain selected in demo mode. | The migration is exercised twice in an embedded PostgreSQL-compatible PGlite test, including schema/constraint checks. A provisioned PostgreSQL staging run, seed execution with approved product data, backup/restore, and concurrency tests remain outstanding. |
+| 5 | Pricing, tax, and shipping | Added production pricing loading/validation, configured GST basis-point rules, and a fail-closed shipping-rate provider request. Totals are server-computed in integer paise. | Sample rates remain visibly identified in demo mode; no production rate or tax value was invented. | Business-approved prices, tax interpretation, shipping contract/rates, and a staging provider response are required before selling. |
+| 6 | Fulfillment, privacy, and retention | Added durable fulfillment outbox, retry/backoff and stale-claim recovery, status-history integration, privacy page, delivery disclosures, and scheduled deletion of expired contact details and artwork. Required contact/artwork retention days and policy URL are configuration values. | Demo checkout does not persist customer contact or claim a real shipment. | Fulfillment provider contract and operational idempotency must be validated. The approved privacy policy, retention periods, and customer-support contact are deployment/business inputs—not authored policy. |
+| 7 | Runtime and operations | Production environment validation requires database, identity, payment, storage, scanner/preflight, pricing/tax/shipping, fulfillment, privacy, retention, logs, monitoring, and backup settings. Production rejects demo repositories/services and sample pricing. | Existing development/demo startup and API behavior remain available. | TLS/proxy setup, trusted origins, secrets, logs/alerts, backup/restore drills, RPO/RTO approval, on-call and incident/rollback ownership still require deployment-owner work. |
+| 8 | Frontend and documentation | Added production Supabase quote flow, authenticated artwork upload, Razorpay script loading, paid checkout, server-verified payment confirmation polling with a timeout/manual recheck, order-status history tracking, customer catalogue price safeguards, and `/privacy`. Production no longer falls back to sample catalogue entries, prices, or imagery when the API/catalogue is unavailable; demo-only estimator and sample policy sections are hidden in production. Updated environment examples and this readiness report. | Demo checkout/confirmation language remains explicit and does not claim real payment or fulfillment. | Storefront TypeScript checks, cover-spread regression tests, and production build passed. Next.js 16.4.3 reports as current stable in the verified package registry. |
+| 11 | Staff-created customer orders | Added staff-only search for existing Supabase customers, selection of their active non-sample quotes, server-validated shipping-order creation, 24-hour Razorpay Payment Links, signed paid/expired webhook transitions, and resilient email-only delivery through the existing outbox. Staff pickup creation is blocked until a location is approved. Demo mode seeds one sample job ticket in memory for the fixed `Demo Staff` identity; no real Supabase login or customer/payment data is used. | Existing quote ownership, artwork preflight, server pricing, and order state machine remain enforced. Demo order mutations exist only in memory. | Route, idempotency, webhook, migration, customer lookup, and email-outbox tests pass. Browser/API smoke test verified the demo queue, ticket, and claim transition. Live Razorpay and Resend staging verification remains outstanding. |
+| 9 | Dependency health | Updated backend Zod/Vitest/Vite/Node types, removed the `uuid` dependency in favor of Node `randomUUID`, and applied npm's compatible audit fixes. Updated request schemas and test UUID fixtures for Zod 4 behavior. | Existing API behavior remains covered by the integration suite. | Backend `npm audit` reports zero vulnerabilities; dependency state should be rechecked as part of routine maintenance. |
+| 10 | Production catalogue safety | Production storefront rejects sample-backend health and sample catalogue responses, and shows unavailable states instead of sample fallbacks. Backend validates production catalogue schema and price/catalogue consistency at startup and before seeding. Removed fabricated quote/spine price fallbacks from production-facing UI. | Demo catalogue and demo-only sample pricing remain available in demo mode. | Verified by storefront/backend type-checks, production build, and backend test suite. |
+
+## Findings and Remaining Blockers — Highest to Lowest
+
+| Priority | Finding | Required action |
+|---|---|---|
+| HIGH | No approved production price catalogue, tax rules, shipping rates, or retention periods were supplied. Runtime validation intentionally fails when production values are absent. | Obtain business approval; populate real configuration without sample or placeholder values. |
+| HIGH | Provider and staging verification remain outstanding. Razorpay, Supabase, R2, scanner/preflight, shipping, fulfillment, monitoring, logging, and backup services have not been exercised end-to-end. | Provision staging resources and verify signatures, ownership, callbacks, retries, failure recovery, and operational controls before live use. |
+| MEDIUM | The migration passed an embedded PostgreSQL-compatible test, but has not been run against a provisioned PostgreSQL service. Approved catalogue data is still not supplied. | Apply migration and seed only the approved catalogue in staging; verify repository flows, concurrency, and backup/restore. |
+| MEDIUM | Provider-specific scanner, preflight, shipping, and fulfillment contracts are not confirmed against selected providers. | Confirm payload/response schemas, timeouts, authentication, signed URL access, retries, retention, and provider idempotency in staging. |
+| LOW | Availability/operations procedures are not demonstrated in this repository. | Test backup restore and deletion schedules; confirm TLS, alert routing, incident response, rollback, and on-call ownership. |
+
+## Configuration and Verification
+
+The backend requirements are listed in [the backend environment example](./printonweb-storefront-backend/.env.example); frontend requirements are listed in [the storefront environment example](./pow-prototype/.env.example). Missing values should remain missing until the responsible owner provides approved values—do not replace them with invented pricing or policy settings.
+
+Validation completed for this implementation:
+
+- Backend TypeScript check: passed.
+- Backend production compilation (`npm run build`): passed.
+- Backend test suite: 96 tests passed, including PGlite migration/constraint checks, staff order creation, payment-link webhook/email coverage, and fulfillment transitions.
+- Backend dependency audit: 0 vulnerabilities.
+- Frontend TypeScript check and cover-spread test: passed.
+- Frontend production build: passed with process-only verification values; no build credentials or test values were written to configuration files.
+- Production storefront rejects sample backend/catalogue responses and does not show sample fallback catalogue/prices; production catalogue configuration is validated at backend startup.
+- Provisioned PostgreSQL migration/seed and external provider staging: still not run; no database, provider accounts, or approved production catalogue/business values were provided.
 
 ## Required Before Launch
 
-- Replace fixed demo identities with a verified authentication provider and server-validated customer IDs.
-- Implement persistent database repositories and migrations for quotes, orders, idempotency, and status history.
-- Implement private object storage, signed upload flow, file type/content verification, malware scanning, and real preflight processing.
-- Integrate a payment provider, signed webhook verification, retry/reconciliation handling, and payment-driven order state transitions.
-- Replace sample pricing/catalogue with approved production rates, tax, shipping, and fulfillment rules.
-- Persist and validate shipping/contact details; define retention and privacy policies.
-- Configure `BACKEND_INTERNAL_URL` for production frontend builds, plus backend `ALLOWED_ORIGINS`, secrets, TLS, logging, monitoring, backups, and incident response.
-- Run security review, dependency/license review, accessibility checks, and end-to-end tests against staging integrations.
-
-## Current Safe Behavior
-
-- Demo profiles are fixed and do not authenticate arbitrary `cust_*` values.
-- Checkout no longer reports success when order or checkout API requests fail.
-- Upload selection creates browser previews only; server metadata registration is not a file upload and is not preflight verification.
-- Next.js production builds require `BACKEND_INTERNAL_URL` and do not ignore TypeScript build errors.
-- The backend uses in-memory repositories and demo pricing in development/test only.
+1. Provide approved pricing/catalogue, tax, shipping, contact-retention, artwork-retention, and privacy-policy values.
+2. Provision providers and secrets; restrict CORS and R2 bucket permissions to real storefront/service origins.
+3. Run migration and repository tests against PostgreSQL, seed approved catalogue rows, and test restore/idempotency/concurrency.
+4. Complete Razorpay, Supabase, R2, scanner/preflight, shipping, and fulfillment staging end-to-end tests.
+5. Re-run dependency audits during routine updates and verify the provider-specific security configuration.
+6. Validate TLS/proxy behavior, monitoring/logging alerts, retention deletion, incident procedures, accessibility, and rollback with deployment owners.
+7. Approve a refund policy and pickup-location details before offering those flows as production-ready.
+8. Configure Razorpay webhooks for `payment_link.paid` and `payment_link.expired`, and verify payment-link creation and email delivery end-to-end in staging. The selected workflow is existing Supabase customers with email-only notifications; no SMS/WhatsApp provider is enabled.
+9. No self-service refund workflow is implemented. Keep refunds as an operator-managed provider action until refund eligibility, approval, and audit requirements are approved and implemented.

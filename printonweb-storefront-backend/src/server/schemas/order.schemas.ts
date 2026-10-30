@@ -28,6 +28,7 @@ export const createOrderBodySchema = z
       })
       .strict()
       .optional(),
+    deliveryMethod: z.enum(["SHIP", "PICKUP"]).optional(),
   })
   .strict();
 

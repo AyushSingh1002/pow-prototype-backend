@@ -1,17 +1,19 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { getDatabasePool } from "../config/database";
 
 async function runMigration(): Promise<void> {
-  const migrationPath = resolve(
-    process.cwd(),
-    "prisma/migrations/20261024000000_production_core.sql"
-  );
-  const migration = await readFile(migrationPath, "utf8");
+  const migrationDirectory = resolve(process.cwd(), "prisma/migrations");
+  const migrationFiles = (await readdir(migrationDirectory))
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
   const pool = getDatabasePool();
   try {
-    await pool.query(migration);
-    console.log("Production core schema migration completed.");
+    for (const migrationFile of migrationFiles) {
+      const migration = await readFile(resolve(migrationDirectory, migrationFile), "utf8");
+      await pool.query(migration);
+      console.log(`Database migration completed: ${migrationFile}`);
+    }
   } finally {
     await pool.end();
   }

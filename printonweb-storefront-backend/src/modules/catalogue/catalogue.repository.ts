@@ -7,6 +7,7 @@ import {
 import { sampleProducts, samplePrintOptions } from "./catalogue.sample-data";
 import { Pool } from "pg";
 import { getDatabasePool } from "../../config/database";
+import type { ProductionCatalogue } from "../../config/catalogueConfig";
 
 export interface ICatalogueRepository {
   findProducts(query: ProductListQuery): Promise<PaginatedResult<Product>>;
@@ -15,8 +16,12 @@ export interface ICatalogueRepository {
 }
 
 export class InMemoryCatalogueRepository implements ICatalogueRepository {
-  private products: Product[] = [...sampleProducts];
+  private products: Product[];
   private printOptions: PrintOption[] = [...samplePrintOptions];
+
+  constructor(isSample = true) {
+    this.products = sampleProducts.map((product) => ({ ...product, isSample }));
+  }
 
   async findProducts(query: ProductListQuery): Promise<PaginatedResult<Product>> {
     let filtered = this.products.filter((product) => product.isActive);
@@ -48,6 +53,38 @@ export class InMemoryCatalogueRepository implements ICatalogueRepository {
     return productId
       ? this.printOptions.filter((option) => option.productId === productId)
       : [...this.printOptions];
+  }
+}
+
+export class ConfiguredCatalogueRepository implements ICatalogueRepository {
+  constructor(private readonly catalogue: ProductionCatalogue) {}
+
+  async findProducts(query: ProductListQuery): Promise<PaginatedResult<Product>> {
+    let products = this.catalogue.products.filter((product) => product.isActive);
+    if (query.category) {
+      products = products.filter(
+        (product) => product.category.toLowerCase() === query.category?.toLowerCase()
+      );
+    }
+
+    const total = products.length;
+    const startIndex = (query.page - 1) * query.pageSize;
+    return {
+      data: products.slice(startIndex, startIndex + query.pageSize),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
+  }
+
+  async findProductById(id: string): Promise<Product | null> {
+    return this.catalogue.products.find((product) => product.id === id || product.slug === id) ?? null;
+  }
+
+  async findPrintOptions(productId?: string): Promise<PrintOption[]> {
+    return this.catalogue.products
+      .filter((product) => !productId || product.id === productId)
+      .flatMap((product) => product.printOptions);
   }
 }
 

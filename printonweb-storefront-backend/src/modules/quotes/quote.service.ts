@@ -64,4 +64,10 @@ export class QuoteService {
 
     return record;
   }
+
+  async listActiveCustomerQuotes(customerId: string): Promise<QuoteRecord[]> {
+    const now = Date.now();
+    return (await this.repository.findByCustomerId(customerId))
+      .filter((quote) => !quote.isSample && Date.parse(quote.expiresAt) > now);
+  }
 }

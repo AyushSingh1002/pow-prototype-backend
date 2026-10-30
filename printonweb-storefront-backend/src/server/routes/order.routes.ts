@@ -31,7 +31,8 @@ export function createOrderRouter(orderService: OrderService): Router {
         const idempotencyKey = req.headers["idempotency-key"] as string;
         const customerId = req.user!.id;
         const quoteId = req.body.quoteId;
-        if (!env.ENABLE_DEMO_MODE && !req.body.contact) {
+        const deliveryMethod = req.body.deliveryMethod ?? "SHIP";
+        if (!env.ENABLE_DEMO_MODE && deliveryMethod === "SHIP" && !req.body.contact) {
           throw new ValidationError("Delivery contact details are required for production orders.");
         }
 
@@ -40,6 +41,7 @@ export function createOrderRouter(orderService: OrderService): Router {
           customerId,
           idempotencyKey,
           contact: req.body.contact,
+          deliveryMethod,
         });
 
         res.status(201).json({
@@ -79,10 +81,24 @@ export function createOrderRouter(orderService: OrderService): Router {
         }
 
         const history = await orderService.getStatusHistory(order.id);
+        const quote = await orderService.getOrderQuote(order.id);
+        if (!quote) {
+          throw new NotFoundError(
+            `Quote for order '${order.id}' not found.`,
+            ErrorCodes.QUOTE_NOT_FOUND
+          );
+        }
 
         res.status(200).json({
           order,
           history,
+          quote: {
+            lineItems: quote.lineItems,
+            total: quote.total,
+            currency: quote.currency,
+            taxIncluded: quote.taxIncluded,
+            shippingIncluded: quote.shippingIncluded,
+          },
         });
       } catch (err) {
         next(err);

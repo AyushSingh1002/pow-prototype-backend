@@ -9,6 +9,12 @@ import { requireAuth } from "../middleware/auth";
 import { validateRequest } from "../middleware/validate";
 
 const createPaymentSchema = z.object({ orderId: z.string().uuid() }).strict();
+const verifyCheckoutSchema = z.object({
+  orderId: z.string().uuid(),
+  paymentOrderId: z.string().min(1).max(100),
+  paymentId: z.string().min(1).max(100),
+  signature: z.string().regex(/^[a-fA-F0-9]{64}$/),
+}).strict();
 
 export function createPaymentRouter(
   payments: ProductionPaymentService,
@@ -32,6 +38,30 @@ export function createPaymentRouter(
         }
         const paymentOrder = await payments.createPaymentOrder(order.id);
         res.status(201).json(paymentOrder);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  router.post(
+    "/payments/verify",
+    express.json(),
+    requireAuth,
+    validateRequest({ body: verifyCheckoutSchema }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const order = await orders.getOrderById(req.body.orderId);
+        if (!order || order.customerId !== req.user!.id) {
+          throw new ForbiddenError("You do not have permission to verify this payment.");
+        }
+        await payments.verifyCheckoutPayment(
+          req.body.orderId,
+          req.body.paymentOrderId,
+          req.body.paymentId,
+          req.body.signature
+        );
+        res.status(200).json({ status: "verified" });
       } catch (error) {
         next(error);
       }

@@ -5,6 +5,7 @@ import {
   ServiceUnavailableError,
 } from "../../core/errors/AppError";
 import { env } from "../../config/env";
+import { OrderService } from "../../modules/orders/order.service";
 
 declare global {
   namespace Express {
@@ -12,6 +13,11 @@ declare global {
       user?: {
         id: string;
         role: string;
+      };
+      staff?: {
+        id: string;
+        displayName: string;
+        role: "staff" | "admin";
       };
     }
   }
@@ -71,6 +77,13 @@ export async function resolveSupabaseIdentity(
   token: string,
   config: { url?: string; anonKey?: string }
 ): Promise<string> {
+  return (await resolveSupabaseUser(token, config)).id;
+}
+
+export async function resolveSupabaseUser(
+  token: string,
+  config: { url?: string; anonKey?: string }
+): Promise<{ id: string; role?: string }> {
   if (!config.url || !config.anonKey) {
     throw new ServiceUnavailableError("Authentication provider is not configured.");
   }
@@ -112,5 +125,59 @@ export async function resolveSupabaseIdentity(
     );
   }
 
-  return user.id;
+  const role =
+    "app_metadata" in user &&
+    user.app_metadata &&
+    typeof user.app_metadata === "object" &&
+    "role" in user.app_metadata &&
+    typeof user.app_metadata.role === "string"
+      ? user.app_metadata.role
+      : undefined;
+  return { id: user.id, role };
+}
+
+export function requireStaffAuth(orderService: OrderService) {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader) return next(new UnauthorizedError("Authentication token is missing."));
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || !token) {
+      return next(new UnauthorizedError("Malformed Authorization header. Format: ******"));
+    }
+
+    if (env.ENABLE_DEMO_MODE || env.NODE_ENV === "test") {
+      if (token !== "demo-staff-token" && token !== "staff_demo_1") {
+        return next(new UnauthorizedError("A staff login is required."));
+      }
+      req.staff = { id: "staff_demo_1", displayName: "Demo Staff", role: "staff" };
+      return next();
+    }
+
+    try {
+      const identity = await resolveSupabaseUser(token, {
+        url: env.SUPABASE_URL,
+        anonKey: env.SUPABASE_ANON_KEY,
+      });
+      if (identity.role !== "staff" && identity.role !== "admin") {
+        return next(new ForbiddenError("A staff account is required."));
+      }
+      const staff = await orderService.findStaffAccount(identity.id);
+      if (!staff || staff.role !== identity.role) {
+        return next(new ForbiddenError("The authenticated user is not an active staff account."));
+      }
+      req.user = { id: identity.id, role: identity.role };
+      req.staff = {
+        id: staff.id,
+        displayName: staff.displayName,
+        role: staff.role,
+      };
+      return next();
+    } catch (error) {
+      if (error instanceof UnauthorizedError || error instanceof ServiceUnavailableError) {
+        return next(error);
+      }
+      console.error("Staff authentication provider request failed.");
+      return next(new ServiceUnavailableError("Staff authentication is unavailable."));
+    }
+  };
 }

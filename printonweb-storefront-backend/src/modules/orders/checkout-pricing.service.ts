@@ -10,7 +10,11 @@ export interface CheckoutCharges {
 }
 
 export interface ICheckoutPricingService {
-  calculate(quote: QuoteRecord, contact: DeliveryContact): Promise<CheckoutCharges>;
+  calculate(
+    quote: QuoteRecord,
+    contact: DeliveryContact | undefined,
+    deliveryMethod: "SHIP" | "PICKUP"
+  ): Promise<CheckoutCharges>;
 }
 
 interface TaxRules {
@@ -26,9 +30,20 @@ export class ProductionCheckoutPricingService implements ICheckoutPricingService
 
   async calculate(
     quote: QuoteRecord,
-    contact: DeliveryContact
+    contact: DeliveryContact | undefined,
+    deliveryMethod: "SHIP" | "PICKUP"
   ): Promise<CheckoutCharges> {
     const rules = parseTaxRules(this.taxRulesJson);
+    if (deliveryMethod === "PICKUP") {
+      return {
+        taxAmount: Math.round((quote.total * rules.gstBasisPoints) / 10_000),
+        shippingAmount: 0,
+        currency: quote.currency,
+      };
+    }
+    if (!contact) {
+      throw new UnprocessableEntityError("Delivery details are required for shipping.");
+    }
     if (!this.shippingProviderUrl || !this.providerToken) {
       throw new ServiceUnavailableError("Shipping-rate provider is not configured.");
     }

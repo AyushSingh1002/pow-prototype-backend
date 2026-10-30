@@ -56,6 +56,14 @@ export function loadPricingConfig(): PricingConfig {
   }
 
   if (!env.PRODUCTION_PRICING_CONFIG) {
+    if (env.NODE_ENV === "development") {
+      return {
+        ...samplePricingConfig,
+        source: "LOCAL LIVE MODE: development sample catalogue with live payment services",
+        version: "local-live-v1",
+        isSample: false,
+      };
+    }
     throw new Error("PRODUCTION_PRICING_CONFIG is required when demo mode is disabled.");
   }
 

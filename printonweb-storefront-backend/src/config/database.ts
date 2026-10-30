@@ -9,8 +9,12 @@ export function getDatabasePool(): Pool {
   }
 
   if (!pool) {
+    const connectionString = env.DATABASE_URL.replace(
+      /([?&])sslmode=require\b/,
+      "$1uselibpqcompat=true&sslmode=require"
+    );
     pool = new Pool({
-      connectionString: env.DATABASE_URL,
+      connectionString,
       ssl: env.NODE_ENV === "production" ? { rejectUnauthorized: true } : undefined,
       max: 10,
       idleTimeoutMillis: 30_000,

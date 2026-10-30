@@ -1,6 +1,7 @@
 import { createApp } from "./app";
 import { env } from "../config/env";
 import { FulfillmentOutboxWorker } from "../modules/orders/fulfillment-outbox.worker";
+import { NotificationOutboxWorker } from "../modules/orders/notification-outbox.worker";
 import { R2UploadService } from "../modules/uploads/r2-upload.service";
 import { loadPricingConfig } from "../config/pricingConfig";
 
@@ -8,10 +9,15 @@ export function startServer() {
   const pricingConfig = loadPricingConfig();
   const app = createApp({ pricingConfig });
   const uploads = env.ENABLE_DEMO_MODE ? undefined : new R2UploadService();
-  const fulfillmentWorker = env.ENABLE_DEMO_MODE
-    ? undefined
-    : new FulfillmentOutboxWorker(undefined, undefined, undefined, fetch, uploads);
+  const startBackgroundWorkers = env.NODE_ENV === "production" && !env.ENABLE_DEMO_MODE;
+  const fulfillmentWorker = startBackgroundWorkers
+    ? new FulfillmentOutboxWorker(undefined, undefined, undefined, fetch, uploads)
+    : undefined;
+  const notificationWorker = startBackgroundWorkers
+    ? new NotificationOutboxWorker(undefined, undefined, undefined, fetch, uploads)
+    : undefined;
   const stopFulfillmentWorker = fulfillmentWorker?.start();
+  const stopNotificationWorker = notificationWorker?.start();
   const runRetentionCleanup = () => {
     if (fulfillmentWorker) {
       void fulfillmentWorker.deleteExpiredContactData().catch((error: unknown) => {
@@ -42,6 +48,7 @@ export function startServer() {
 
   const shutdown = (signal: string) => {
     stopFulfillmentWorker?.();
+    stopNotificationWorker?.();
     if (retentionTimer) clearInterval(retentionTimer);
     console.log(
       JSON.stringify({

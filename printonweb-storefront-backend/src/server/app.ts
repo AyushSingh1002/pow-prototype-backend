@@ -11,6 +11,7 @@ import { errorHandlerMiddleware } from "./middleware/errorHandler";
 import { InMemoryRateLimiter } from "./middleware/rateLimiter";
 import {
   ICatalogueRepository,
+  ConfiguredCatalogueRepository,
   InMemoryCatalogueRepository,
   PostgresCatalogueRepository,
 } from "../modules/catalogue/catalogue.repository";
@@ -44,7 +45,9 @@ import { createOrderRouter } from "./routes/order.routes";
 import { createDemoRouter } from "./routes/demo.routes";
 import { createPaymentRouter } from "./routes/payment.routes";
 import { createUploadRouter } from "./routes/upload.routes";
+import { createStaffRouter } from "./routes/staff.routes";
 import { PricingConfig } from "../modules/pricing/pricing.types";
+import { demoStaffOrder, demoStaffQuote } from "../config/demoStaffQueue";
 
 export interface AppDependencies {
   catalogueRepository?: ICatalogueRepository;
@@ -141,34 +144,40 @@ export function createApp(deps: AppDependencies = {}): Express {
   );
 
   // Dependency Resolution
-  const catalogueRepo =
-    deps.catalogueRepository ||
-    (env.ENABLE_DEMO_MODE
-      ? new InMemoryCatalogueRepository()
-      : new PostgresCatalogueRepository());
+  const productionCatalogue = env.NODE_ENV === "production" && !env.ENABLE_DEMO_MODE
+    ? loadProductionCatalogue()
+    : undefined;
+  const catalogueRepo = deps.catalogueRepository || (
+    productionCatalogue
+      ? new ConfiguredCatalogueRepository(productionCatalogue)
+      : new InMemoryCatalogueRepository(env.ENABLE_DEMO_MODE)
+  );
   const catalogueService = new CatalogueService(catalogueRepo);
 
   const pricingConfig = deps.pricingConfig || loadPricingConfig();
-  if (!env.ENABLE_DEMO_MODE) {
-    loadProductionCatalogue();
-  }
+  const seedDemoStaffQueue =
+    env.ENABLE_DEMO_MODE &&
+    env.NODE_ENV !== "test" &&
+    !deps.orderRepository &&
+    !deps.quoteRepository;
   const quoteRepo =
     deps.quoteRepository ||
     (env.ENABLE_DEMO_MODE
-      ? new InMemoryQuoteRepository()
+      ? new InMemoryQuoteRepository(seedDemoStaffQueue ? [demoStaffQuote] : [])
       : new PostgresQuoteRepository());
   const quoteService = new QuoteService(quoteRepo, pricingConfig, env.QUOTE_TTL_MINUTES);
 
   const orderRepo =
     deps.orderRepository ||
     (env.ENABLE_DEMO_MODE
-      ? new InMemoryOrderRepository()
+      ? new InMemoryOrderRepository([], seedDemoStaffQueue ? [demoStaffOrder] : [])
       : new PostgresOrderRepository());
   const orderService = new OrderService(
     orderRepo,
     quoteRepo,
     pricingConfig,
-    env.ENABLE_DEMO_MODE ? undefined : new ProductionCheckoutPricingService()
+    env.ENABLE_DEMO_MODE ? undefined : new ProductionCheckoutPricingService(),
+    catalogueRepo
   );
 
   const uploadService =
@@ -202,6 +211,9 @@ export function createApp(deps: AppDependencies = {}): Express {
   apiRouter.use(createCatalogueRouter(catalogueService));
   apiRouter.use(createQuoteRouter(quoteService, rateLimiter));
   apiRouter.use(createOrderRouter(orderService));
+  apiRouter.use(
+    createStaffRouter(orderService, uploadService, quoteService, productionPaymentService)
+  );
   if (env.ENABLE_DEMO_MODE) {
     if (!paymentService) throw new Error("Demo payment service is not configured.");
     apiRouter.use(createDemoRouter(uploadService as StubbedUploadService, paymentService));

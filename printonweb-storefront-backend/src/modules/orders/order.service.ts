@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { IOrderRepository } from "./order.repository";
-import { CreateOrderDTO, OrderRecord, TransitionOrderDTO } from "./order.types";
+import {
+  CreateOrderDTO,
+  OrderRecord,
+  StaffOrderDetails,
+  StaffQueueOrder,
+  TransitionOrderDTO,
+} from "./order.types";
 import { IQuoteRepository } from "../quotes/quote.repository";
+import { ICatalogueRepository } from "../catalogue/catalogue.repository";
 import { PricingConfig } from "../pricing/pricing.types";
 import { estimate } from "../pricing/pricing.engine";
 import { assertValidTransition } from "./order.state-machine";
@@ -11,6 +18,7 @@ import {
   NotFoundError,
   GoneError,
   ConflictError,
+  ForbiddenError,
   UnprocessableEntityError,
 } from "../../core/errors/AppError";
 import { ErrorCodes } from "../../core/errors/errorCodes";
@@ -20,7 +28,8 @@ export class OrderService {
     private readonly orderRepository: IOrderRepository,
     private readonly quoteRepository: IQuoteRepository,
     private readonly pricingConfig: PricingConfig,
-    private readonly checkoutPricing?: ICheckoutPricingService
+    private readonly checkoutPricing?: ICheckoutPricingService,
+    private readonly catalogueRepository?: ICatalogueRepository
   ) {}
 
   async createDraftOrder(dto: CreateOrderDTO): Promise<OrderRecord> {
@@ -33,7 +42,8 @@ export class OrderService {
     if (existing) {
       if (
         existing.quoteId === dto.quoteId &&
-        sameContact(existing.contact, dto.contact)
+          existing.deliveryMethod === (dto.deliveryMethod ?? "SHIP") &&
+          sameContact(existing.contact, dto.contact)
       ) {
         // Safe idempotent replay
         return existing;
@@ -103,11 +113,12 @@ export class OrderService {
       );
     }
 
-    if (dto.contact && !this.checkoutPricing && !this.pricingConfig.isSample) {
+    if (!this.checkoutPricing && !this.pricingConfig.isSample) {
       throw new ServiceUnavailableError("Production checkout pricing is not configured.");
     }
-    const charges = dto.contact && this.checkoutPricing
-      ? await this.checkoutPricing.calculate(quote, dto.contact)
+    const deliveryMethod = dto.deliveryMethod ?? "SHIP";
+    const charges = this.checkoutPricing
+      ? await this.checkoutPricing.calculate(quote, dto.contact, deliveryMethod)
       : { taxAmount: 0, shippingAmount: 0, currency: recomputed.currency };
     if (charges.currency !== recomputed.currency) {
       throw new UnprocessableEntityError(
@@ -136,6 +147,7 @@ export class OrderService {
       taxAmount: charges.taxAmount,
       shippingAmount: charges.shippingAmount,
       contact: dto.contact,
+      deliveryMethod,
     };
 
     const initialHistory = {
@@ -150,7 +162,43 @@ export class OrderService {
     return this.orderRepository.saveOrder(orderRecord, initialHistory);
   }
 
-  async transitionStatus(dto: TransitionOrderDTO): Promise<OrderRecord> {
+  async transitionStatus(
+    dto: TransitionOrderDTO,
+    options: {
+      actingStaffId?: string;
+      isAdmin?: boolean;
+      reassignToStaffId?: string;
+    } = {}
+  ): Promise<OrderRecord> {
+    if (options.reassignToStaffId) {
+      if (!options.actingStaffId || !options.isAdmin) {
+        throw new ForbiddenError("Only an admin can reassign a production order.");
+      }
+      return this.orderRepository.reassignOrder(
+        dto.orderId,
+        options.actingStaffId,
+        options.reassignToStaffId,
+        {
+          id: randomUUID(),
+          orderId: dto.orderId,
+          fromStatus: null,
+          toStatus: dto.toStatus,
+          reason: dto.reason,
+          createdAt: new Date().toISOString(),
+        }
+      );
+    }
+    if (options.actingStaffId && dto.toStatus === "IN_PRODUCTION") {
+      assertValidTransition("CONFIRMED", dto.toStatus);
+      return this.orderRepository.claimOrder(dto.orderId, options.actingStaffId, {
+        id: randomUUID(),
+        orderId: dto.orderId,
+        fromStatus: "CONFIRMED",
+        toStatus: dto.toStatus,
+        reason: dto.reason ?? "Claimed by staff",
+        createdAt: new Date().toISOString(),
+      });
+    }
     const order = await this.orderRepository.findById(dto.orderId);
     if (!order) {
       throw new NotFoundError(
@@ -159,7 +207,17 @@ export class OrderService {
       );
     }
 
-    assertValidTransition(order.status, dto.toStatus);
+    try {
+      assertValidTransition(order.status, dto.toStatus);
+    } catch (error) {
+      if (options.actingStaffId && error instanceof UnprocessableEntityError) {
+        throw new ConflictError(
+          `Order is now '${order.status}' and cannot transition to '${dto.toStatus}'.`,
+          ErrorCodes.INVALID_STATE_TRANSITION
+        );
+      }
+      throw error;
+    }
 
     const historyItem = {
       id: randomUUID(),
@@ -170,11 +228,108 @@ export class OrderService {
       createdAt: new Date().toISOString(),
     };
 
-    return this.orderRepository.updateStatus(order.id, dto.toStatus, historyItem);
+    return this.orderRepository.updateStatus(
+      order.id,
+      dto.toStatus,
+      historyItem,
+      options.actingStaffId
+        ? { staffId: options.actingStaffId, isAdmin: options.isAdmin ?? false }
+        : undefined
+    );
+  }
+
+  async listStaffOrders(staffId: string): Promise<StaffQueueOrder[]> {
+    const orders = await this.orderRepository.listStaffOrders(staffId);
+    if (!this.pricingConfig.isSample) return orders;
+    return Promise.all(orders.map((order) => this.attachDemoQuoteDetails(order)));
+  }
+
+  async getStaffOrderDetails(orderId: string, staffId: string): Promise<StaffOrderDetails | null> {
+    const [details, order] = await Promise.all([
+      this.orderRepository.getStaffOrderDetails(orderId, staffId),
+      this.orderRepository.findById(orderId),
+    ]);
+    if (!details || !order) return null;
+
+    const quote = await this.quoteRepository.findById(order.quoteId);
+    if (!quote) {
+      throw new NotFoundError(`Quote '${order.quoteId}' not found.`, ErrorCodes.QUOTE_NOT_FOUND);
+    }
+
+    const productDetails = this.pricingConfig.isSample
+      ? await this.attachDemoQuoteDetails(details)
+      : details;
+    return {
+      ...productDetails,
+      lineItems: quote.lineItems,
+      total: order.total,
+    };
+  }
+
+  async findStaffAccount(userId: string) {
+    return this.orderRepository.findStaffAccount(userId);
+  }
+
+  async searchStaffCustomers(query: string) {
+    return this.orderRepository.searchCustomers(query);
+  }
+
+  async getStaffCustomer(customerId: string) {
+    return this.orderRepository.findCustomerById(customerId);
+  }
+
+  async listStaffAccounts(adminId: string) {
+    return this.orderRepository.listStaffAccounts(adminId);
+  }
+
+  async claimOrder(orderId: string, staffId: string): Promise<OrderRecord> {
+    return this.transitionStatus(
+      { orderId, toStatus: "IN_PRODUCTION", reason: "Claimed by staff" },
+      { actingStaffId: staffId }
+    );
+  }
+
+  async releaseOrder(orderId: string, staffId: string, isAdmin: boolean): Promise<OrderRecord> {
+    return this.orderRepository.releaseOrder(orderId, staffId, isAdmin);
+  }
+
+  async flagProblem(
+    orderId: string,
+    staffId: string,
+    note: string,
+    customerVisible: boolean
+  ): Promise<void> {
+    return this.orderRepository.addStaffNote(orderId, staffId, note, customerVisible);
+  }
+
+  async listDeadNotifications(staffId: string) {
+    return this.orderRepository.listDeadNotifications(staffId);
+  }
+
+  async retryNotification(id: string, staffId: string): Promise<boolean> {
+    return this.orderRepository.retryNotification(id, staffId);
+  }
+
+  private async attachDemoQuoteDetails<T extends StaffQueueOrder>(order: T): Promise<T> {
+    const quote = await this.quoteRepository.findById(order.productId);
+    if (!quote) return order;
+    const product = await this.catalogueRepository?.findProductById(quote.productId);
+    return {
+      ...order,
+      productId: quote.productId,
+      productName: product?.name ?? quote.productId,
+      quantity: quote.quantity,
+      validatedOptions: quote.validatedOptions,
+    };
   }
 
   async getOrderById(id: string): Promise<OrderRecord | null> {
     return this.orderRepository.findById(id);
+  }
+
+  async getOrderQuote(orderId: string) {
+    const order = await this.orderRepository.findById(orderId);
+    return order ? this.quoteRepository.findById(order.quoteId) : null;
   }
 
   async getStatusHistory(id: string) {

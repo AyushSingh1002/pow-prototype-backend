@@ -63,10 +63,14 @@ export class R2UploadService implements IProductionUploadService {
     if (!endpoint || !region || !bucket || !accessKeyId || !secretAccessKey) {
       throw new Error("R2 storage configuration is incomplete.");
     }
+    const endpointUrl = new URL(endpoint);
+    if (endpointUrl.pathname.replace(/^\/+|\/+$/g, "") === bucket) {
+      endpointUrl.pathname = "/";
+    }
     this.bucket = bucket;
     this.storage = new S3Client({
       region,
-      endpoint,
+      endpoint: endpointUrl.toString(),
       forcePathStyle: true,
       credentials: { accessKeyId, secretAccessKey },
     });
@@ -85,12 +89,19 @@ export class R2UploadService implements IProductionUploadService {
     const key = `${customerId}/${randomUUID()}`;
     const uploadKey = `${customerId}/incoming/${randomUUID()}`;
     const safeFilename = sanitizeFilename(input.originalFilename);
+    const retentionDays = Number(env.ARTWORK_RETENTION_DAYS ?? 30);
+    if (!Number.isSafeInteger(retentionDays) || retentionDays <= 0) {
+      throw new Error("ARTWORK_RETENTION_DAYS must be a positive integer.");
+    }
+    const retentionExpiresAt = new Date(
+      Date.now() + retentionDays * 24 * 60 * 60 * 1000
+    );
     await this.pool.query(
       `INSERT INTO files (
         id, customer_id, storage_key, upload_key, original_name, mime_type, slot_id, size_bytes,
         status, quote_id, order_id, retention_expires_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10,
-        now() + ($11 * interval '1 day'))`,
+        $11)`,
       [
         id,
         customerId,
@@ -102,7 +113,7 @@ export class R2UploadService implements IProductionUploadService {
         input.sizeBytes,
         input.quoteId ?? null,
         input.orderId ?? null,
-        Number(env.ARTWORK_RETENTION_DAYS),
+        retentionExpiresAt,
       ]
     );
 
@@ -238,6 +249,32 @@ export class R2UploadService implements IProductionUploadService {
       throw new UnprocessableEntityError("Only scanned artwork can be downloaded.");
     }
     return this.createSignedReadUrl(file.storageKey);
+  }
+
+  async deleteOrderArtwork(orderId: string): Promise<number> {
+    const result = await this.pool.query(
+      "SELECT id, storage_key, upload_key FROM files WHERE order_id = $1 ORDER BY id",
+      [orderId]
+    );
+    let deleted = 0;
+    for (const file of result.rows) {
+      const storageKey = String(file.storage_key);
+      const uploadKey = file.upload_key ? String(file.upload_key) : undefined;
+      await this.storage.send(
+        new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey })
+      );
+      if (uploadKey && uploadKey !== storageKey) {
+        await this.storage.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: uploadKey })
+        );
+      }
+      const removed = await this.pool.query(
+        "DELETE FROM files WHERE id = $1 AND order_id = $2",
+        [file.id, orderId]
+      );
+      deleted += removed.rowCount ?? 0;
+    }
+    return deleted;
   }
 
   async deleteExpiredFiles(limit = 100): Promise<number> {

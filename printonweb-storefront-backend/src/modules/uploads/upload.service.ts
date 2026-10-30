@@ -32,6 +32,7 @@ export interface IProductionUploadService extends IUploadService {
   ): Promise<InitiateUploadResult>;
   completeUpload(fileId: string, customerId: string): Promise<FileMetadataRecord>;
   createReadUrl(fileId: string, customerId: string): Promise<string>;
+  deleteOrderArtwork(orderId: string): Promise<number>;
 }
 
 export class StubbedUploadService implements IUploadService {
